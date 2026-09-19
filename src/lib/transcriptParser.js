@@ -6,39 +6,42 @@ import JSZip from "jszip";
 export function getDefaultTranscriptData() {
   return {
     qrCodeDataUrl: null,
-    bannerDataUrl: null,
+    bannerDataUrl: "/gibson_banner.png",
     photoDataUrl: null,
     photoBlobUrl: null,
-    studentName: "Chrstian Abebe",
-    studentShortName: "Chrstian A",
+    studentId: "1121564",
+    studentName: "Inas Zakir Ahmed",
+    studentShortName: "Inas Z",
     age: "17",
-    gender: "Male",
+    gender: "Female",
     stream: "Natural Science",
     years: {
-      g9: "2010/11",
-      g10: "2011/12",
-      g11: "2012/13",
-      g12: "2013/14",
+      g9: "2022/2023",
+      g10: "2023/2024",
+      g11: "2024/2025",
+      g12: "2025/2026",
     },
     gradeRows: [
-      { subject: "Amharic", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["___", "___", "___"] },
-      { subject: "Afan Oromo", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["___", "___", "___"] },
-      { subject: "Biology", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["87.1", "80.9", "84"] },
-      { subject: "Chemistry", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["79.41", "75.30", "77.35"] },
-      { subject: "Civics and Ethical Education", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["___", "___", "___"] },
-      { subject: "English", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["89.12", "78.53", "83.82"] },
-      { subject: "Health and physical education", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["___", "___", "___"] },
-      { subject: "Geography", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["___", "___", "___"] },
-      { subject: "History", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["___", "___", "___"] },
-      { subject: "ICT", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["96.27", "84.35", "90.31"] },
-      { subject: "Mathematics", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["61.65", "72.18", "66.91"] },
-      { subject: "Physics", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["67.12", "71.23", "69.17"] },
-      { subject: "Technical Drawing", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["74.65", "70.14", "72.39"] },
-      { subject: "Total", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["555.32", "532.63", "543.97"] },
-      { subject: "Average", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["79.33", "76.09", "77.71"] },
-      { subject: "Rank", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["", "", ""] },
-      { subject: "Conduct /Work Ethics", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["", "", ""] },
-      { subject: "Absence", g9: ["", "", ""], g10: ["", "", ""], g11: ["", "", ""], g12: ["", "", ""] },
+      { subject: "Agriculture", g9: ["-", "-", "-"], g10: ["-", "-", "-"], g11: ["92.8", "85.66", "89.23"], g12: ["85.86", "95.2", "90.53"] },
+      { subject: "Afan Oromo", g9: ["-", "-", "-"], g10: ["99.41", "97.86", "98.64"], g11: ["-", "-", "-"], g12: ["-", "-", "-"] },
+      { subject: "Amharic", g9: ["69.88", "79.22", "74.55"], g10: ["82.92", "83.14", "83.03"], g11: ["-", "-", "-"], g12: ["-", "-", "-"] },
+      { subject: "Biology", g9: ["74.33", "79.72", "77.03"], g10: ["92.09", "84.33", "88.21"], g11: ["86.72", "89.72", "88.22"], g12: ["83.75", "96", "89.88"] },
+      { subject: "Chemistry", g9: ["70", "65.03", "67.52"], g10: ["52.99", "76.46", "64.725"], g11: ["72.39", "88.92", "80.655"], g12: ["84.29", "97", "90.645"] },
+      { subject: "Civics and Ethical Education", g9: ["81.76", "86.89", "84.3"], g10: ["86.16", "84.13", "85.15"], g11: ["-", "-", "-"], g12: ["-", "-", "-"] },
+      { subject: "Economics", g9: ["-", "-", "-"], g10: ["77.39", "77.67", "77.53"], g11: ["-", "-", "-"], g12: ["-", "-", "-"] },
+      { subject: "English", g9: ["63.81", "79.54", "71.68"], g10: ["81.78", "76.5", "79.14"], g11: ["82.28", "84.92", "83.6"], g12: ["89.67", "96.3", "92.985"] },
+      { subject: "Health and Physical Education", g9: ["100", "100", "100"], g10: ["79.6", "89.69", "84.65"], g11: ["-", "-", "-"], g12: ["-", "-", "-"] },
+      { subject: "Geography", g9: ["83.71", "83.2", "83.46"], g10: ["83.35", "81.87", "82.61"], g11: ["-", "-", "-"], g12: ["-", "-", "-"] },
+      { subject: "History", g9: ["75.36", "71.22", "73.3"], g10: ["80.65", "86.15", "83.4"], g11: ["-", "-", "-"], g12: ["-", "-", "-"] },
+      { subject: "ICT", g9: ["83.23", "88.07", "85.65"], g10: ["84.27", "73.85", "79.06"], g11: ["97.19", "92.89", "95.04"], g12: ["93.69", "95", "94.345"] },
+      { subject: "Mathematics", g9: ["72.28", "63.27", "67.78"], g10: ["62.2", "70.8", "66.5"], g11: ["68.34", "79.47", "73.905"], g12: ["88.68", "85", "86.84"] },
+      { subject: "Physics", g9: ["72.77", "58.9", "65.84"], g10: ["71.55", "78.8", "75.18"], g11: ["74.74", "65.47", "70.105"], g12: ["89.98", "89", "89.49"] },
+      { subject: "Web Design & Development", g9: ["-", "-", "-"], g10: ["-", "-", "-"], g11: ["78.15", "78.41", "78.28"], g12: ["88.48", "90.0", "89.24"] },
+      { subject: "Total", g9: ["847.13", "855.06", "851.095"], g10: ["1034.36", "1061.25", "1047.8"], g11: ["652.61", "665.46", "659.04"], g12: ["704.4", "743.5", "723.95"] },
+      { subject: "Average", g9: ["77.01", "77.73", "77.37"], g10: ["79.57", "81.63", "80.60"], g11: ["81.58", "83.18", "82.38"], g12: ["88.05", "92.94", "90.49"] },
+      { subject: "Rank", g9: ["10/34", "10/34", "9/34"], g10: ["4/31", "5/31", "4/31"], g11: ["8/24", "7/24", "8/24"], g12: ["14/23", "4/23", "4/23"] },
+      { subject: "Conduct/Work Ethic", g9: ["", "A", ""], g10: ["", "A", ""], g11: ["", "B", ""], g12: ["", "A", ""] },
+      { subject: "Absences", g9: ["", "2", ""], g10: ["", "8", ""], g11: ["", "5", ""], g12: ["", "18", ""] },
     ],
   };
 }
@@ -87,17 +90,24 @@ export async function parseDocxTranscript(arrayBuffer) {
     const docXml = (await zip.file("word/document.xml")?.async("text")) || "";
 
     // 1. Extract Student Info
-    let studentName = "Chrstian Abebe";
-    let studentShortName = "Chrstian A";
+    let studentId = "1121564";
+    let studentName = "Inas Zakir Ahmed";
+    let studentShortName = "Inas Z";
     let age = "17";
-    let gender = "Male";
+    let gender = "Female";
     let stream = "Natural Science";
 
+    // Extract Student ID
+    const studentIdMatch = docXml.match(/Student\s*ID:[\s\S]*?(\d+)/i) || docXml.match(/ID:[\s\S]*?(\d{5,10})/i);
+    if (studentIdMatch && studentIdMatch[1]) {
+      studentId = studentIdMatch[1].trim();
+    }
+
     // Look for "Name of the student:" paragraph
-    const studentInfoMatch = docXml.match(/Name of the student:[\s\S]*?Stream:[\s\S]*?<\/w:p>/);
+    const studentInfoMatch = docXml.match(/Name of the [Ss]tudent:[\s\S]*?Stream:[\s\S]*?<\/w:p>/);
     if (studentInfoMatch) {
       const rawText = studentInfoMatch[0].replace(/<.*?>/g, " ").replace(/\s+/g, " ");
-      const nameM = rawText.match(/Name of the student:\s*(.*?)\s*Age:/i);
+      const nameM = rawText.match(/Name of the [Ss]tudent:\s*(.*?)\s*Age:/i);
       const ageM = rawText.match(/Age:\s*(\d+)/i);
       const genderM = rawText.match(/Gender:\s*(.*?)\s*Stream:/i);
       const streamM = rawText.match(/Stream:\s*(.*?)$/i);
@@ -108,28 +118,37 @@ export async function parseDocxTranscript(arrayBuffer) {
       if (streamM && streamM[1].trim()) stream = streamM[1].trim();
     }
 
-    // Look for short name under QR (e.g. "Chrstian .A")
-    const shortNameMatch = docXml.match(/<w:t[^>]*>(Chrstian[\s\S]*?)<\/w:t>/i);
+    // Look for short name under QR
+    const shortNameMatch =
+      docXml.match(/<w:t[^>]*>([A-Za-z]+(?:\s*\.\s*[A-Za-z]|\s+[A-Za-z]))<\/w:t>/i) ||
+      docXml.match(/<w:t[^>]*>(Chrstian[\s\S]*?|Inas[\s\S]*?)<\/w:t>/i);
     if (shortNameMatch) {
       const cleaned = shortNameMatch[1].replace(/<.*?>/g, "").trim();
-      if (cleaned && cleaned.length < 20) {
+      if (cleaned && cleaned.length < 25 && !cleaned.includes("Student") && !cleaned.includes("Gibson")) {
         studentShortName = cleaned;
+      }
+    } else if (studentName) {
+      const parts = studentName.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        studentShortName = `${parts[0]} ${parts[parts.length - 1][0]}`;
+      } else {
+        studentShortName = studentName;
       }
     }
 
     // 2. Extract Academic Years
-    let grade9Year = "2010/11";
-    let grade10Year = "2011/12";
-    let grade11Year = "2012/13";
-    let grade12Year = "2013/14";
+    let grade9Year = "2022/2023";
+    let grade10Year = "2023/2024";
+    let grade11Year = "2024/2025";
+    let grade12Year = "2025/2026";
 
-    const g9Match = docXml.match(/Grade:\s*9[\s\S]*?Aca\.\s*Year:\s*([^\s<]+)/i);
+    const g9Match = docXml.match(/Grade:\s*9[\s\S]*?Aca\.?\s*Year:?\s*([^\s<]+)/i);
     if (g9Match) grade9Year = g9Match[1];
-    const g10Match = docXml.match(/Grade:\s*10[\s\S]*?Aca\.\s*Year:\s*([^\s<]+)/i);
+    const g10Match = docXml.match(/Grade:\s*10[\s\S]*?Aca\.?\s*Year:?\s*([^\s<]+)/i);
     if (g10Match) grade10Year = g10Match[1];
-    const g11Match = docXml.match(/Grade:\s*11[\s\S]*?Aca\.\s*Year:\s*([^\s<]+)/i);
+    const g11Match = docXml.match(/Grade:\s*11[\s\S]*?Aca\.?\s*Year:?\s*([^\s<]+)/i);
     if (g11Match) grade11Year = g11Match[1];
-    const g12Match = docXml.match(/Grade:\s*12[\s\S]*?Aca\.\s*Year:\s*([^\s<]+)/i);
+    const g12Match = docXml.match(/Grade:\s*12[\s\S]*?Aca\.?\s*Year:?\s*([^\s<]+)/i);
     if (g12Match) grade12Year = g12Match[1];
 
     // 3. Extract Grade Table Rows
@@ -177,8 +196,9 @@ export async function parseDocxTranscript(arrayBuffer) {
 
     return {
       qrCodeDataUrl,
-      bannerDataUrl,
+      bannerDataUrl: bannerDataUrl || "/gibson_banner.png",
       photoDataUrl,
+      studentId,
       studentName,
       studentShortName,
       age,
