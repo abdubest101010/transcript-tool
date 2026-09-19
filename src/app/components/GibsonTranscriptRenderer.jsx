@@ -5,6 +5,19 @@ import React from "react";
 export default function GibsonTranscriptRenderer({ data }) {
   if (!data) return null;
 
+  if (data.documentPageDataUrl) {
+    return (
+      <div className="w-full max-w-[920px] bg-white text-black p-1 sm:p-2 mx-auto">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={data.documentPageDataUrl}
+          alt="Official Transcript"
+          className="w-full h-auto object-contain block mx-auto border border-gray-200 shadow-sm"
+        />
+      </div>
+    );
+  }
+
   const bannerSrc = data.bannerDataUrl || "/gibson_banner.png";
 
   return (
@@ -71,7 +84,14 @@ export default function GibsonTranscriptRenderer({ data }) {
         </div>
       </div>
 
-      {/* 2. Student Info Bar */}
+      {/* 2. Student Transcript Title */}
+      <div className="text-center my-1.5">
+        <h2 className="font-bold text-[14px] sm:text-[15px] underline tracking-wide inline-block font-serif">
+          Student Transcript
+        </h2>
+      </div>
+
+      {/* 3. Student Info Bar */}
       <div className="flex flex-wrap items-center justify-between text-xs sm:text-[13px] font-bold border-b-2 border-black pb-1 mb-2 px-1 gap-2">
         <div>
           <span>Name of the Student: </span>

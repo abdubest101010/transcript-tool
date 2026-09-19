@@ -71,8 +71,11 @@ export async function processTranscriptDocx(
 
   let targetImagePath = null;
   let originalQrData = null;
+  let qrCodeLocation = null;
+  let targetImageBuffer = null;
+  let targetImageInfo = null;
 
-  // Find media files in the docx
+  // Extract all media files from the DOCX zip
   const mediaFiles = [];
   zip.folder("word/media")?.forEach((relativePath, file) => {
     mediaFiles.push({ path: `word/media/${relativePath}`, file });
@@ -89,10 +92,18 @@ export async function processTranscriptDocx(
       try {
         const imgBuf = await item.file.async("nodebuffer");
         if (imgBuf.length > 0) {
-          const decoded = await decodeQrFromAnyImage(imgBuf);
-          if (decoded) {
-            originalQrData = decoded;
+          const { data, info } = await sharp(imgBuf)
+            .ensureAlpha()
+            .raw()
+            .toBuffer({ resolveWithObject: true });
+
+          const code = jsQR(new Uint8ClampedArray(data), info.width, info.height);
+          if (code) {
+            originalQrData = code.data;
             targetImagePath = item.path;
+            qrCodeLocation = code.location;
+            targetImageBuffer = imgBuf;
+            targetImageInfo = info;
             break;
           }
         }
@@ -100,20 +111,80 @@ export async function processTranscriptDocx(
     }
   }
 
-  if (!targetImagePath) {
-    const img2 = zip.file("word/media/image2.png");
-    targetImagePath = img2 ? "word/media/image2.png" : (mediaFiles[0]?.path || "word/media/image2.png");
+  let documentPageDataUrl = null;
+  let documentPageBuffer = null;
+
+  if (targetImagePath && targetImageBuffer && qrCodeLocation && targetImageInfo) {
+    const minX = Math.min(qrCodeLocation.topLeftCorner.x, qrCodeLocation.bottomLeftCorner.x);
+    const maxX = Math.max(qrCodeLocation.topRightCorner.x, qrCodeLocation.bottomRightCorner.x);
+    const minY = Math.min(qrCodeLocation.topLeftCorner.y, qrCodeLocation.topRightCorner.y);
+    const maxY = Math.max(qrCodeLocation.bottomLeftCorner.y, qrCodeLocation.bottomRightCorner.y);
+
+    const qrW = maxX - minX;
+    const qrH = maxY - minY;
+    const qrSize = Math.round(Math.max(qrW, qrH));
+
+    const isFullPageScan = qrSize / targetImageInfo.width < 0.75;
+
+    if (isFullPageScan) {
+      // It's a scanned page containing the QR code inside it!
+      // Overlay the new QR code onto the exact QR bounding box on the original scanned page!
+      const left = Math.max(0, Math.round(minX));
+      const top = Math.max(0, Math.round(minY));
+
+      const newQrPng = await QRCode.toBuffer(newQrUrl, {
+        type: "png",
+        width: qrSize,
+        margin: 1,
+        errorCorrectionLevel: "M",
+        color: {
+          dark: "#000000",
+          light: "#ffffff",
+        },
+      });
+
+      const newQrResized = await sharp(newQrPng)
+        .resize(qrSize, qrSize, { fit: "fill" })
+        .toBuffer();
+
+      const isTargetJpg =
+        targetImagePath.toLowerCase().endsWith(".jpg") ||
+        targetImagePath.toLowerCase().endsWith(".jpeg");
+
+      let composited;
+      if (isTargetJpg) {
+        composited = await sharp(targetImageBuffer)
+          .composite([{ input: newQrResized, left, top }])
+          .jpeg({ quality: 95 })
+          .toBuffer();
+      } else {
+        composited = await sharp(targetImageBuffer)
+          .composite([{ input: newQrResized, left, top }])
+          .png()
+          .toBuffer();
+      }
+
+      zip.file(targetImagePath, composited);
+      documentPageBuffer = composited;
+      const mime = isTargetJpg ? "image/jpeg" : "image/png";
+      documentPageDataUrl = `data:${mime};base64,${composited.toString("base64")}`;
+    } else {
+      // Standalone QR image file: replace the image directly
+      const isTargetJpg =
+        targetImagePath.toLowerCase().endsWith(".jpg") ||
+        targetImagePath.toLowerCase().endsWith(".jpeg");
+      let newQrBuffer = await generateQrCodePng(newQrUrl, 600);
+      if (isTargetJpg) {
+        newQrBuffer = await sharp(newQrBuffer).jpeg({ quality: 95 }).toBuffer();
+      }
+      zip.file(targetImagePath, newQrBuffer);
+    }
+  } else {
+    // Fallback: target image2.png
+    targetImagePath = "word/media/image2.png";
+    const newQrBuffer = await generateQrCodePng(newQrUrl, 600);
+    zip.file(targetImagePath, newQrBuffer);
   }
-
-  // Generate crisp 600px high resolution QR code buffer
-  const isTargetJpg = targetImagePath.toLowerCase().endsWith(".jpg") || targetImagePath.toLowerCase().endsWith(".jpeg");
-  let newQrBuffer = await generateQrCodePng(newQrUrl, 600);
-
-  if (isTargetJpg) {
-    newQrBuffer = await sharp(newQrBuffer).jpeg({ quality: 95 }).toBuffer();
-  }
-
-  zip.file(targetImagePath, newQrBuffer);
 
   // Process optional Student Photo
   let processedPhotoBuffer = null;
@@ -199,6 +270,9 @@ export async function processTranscriptDocx(
   // Extract structured parsed transcript data directly from the generated buffer
   const { parseDocxTranscript } = await import("./transcriptParser");
   const parsedData = await parseDocxTranscript(modifiedDocxBuffer);
+  if (documentPageDataUrl) {
+    parsedData.documentPageDataUrl = documentPageDataUrl;
+  }
   if (processedPhotoBuffer && !parsedData.photoDataUrl) {
     parsedData.photoDataUrl = `data:image/jpeg;base64,${processedPhotoBuffer.toString("base64")}`;
   }
