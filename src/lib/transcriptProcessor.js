@@ -269,6 +269,7 @@ export async function processTranscriptDocx(
 
   // Extract structured parsed transcript data directly from the generated buffer
   const { parseDocxTranscript } = await import("./transcriptParser");
+  const { saveTranscriptData } = await import("./serverStore");
   const parsedData = await parseDocxTranscript(modifiedDocxBuffer);
   if (documentPageDataUrl) {
     parsedData.documentPageDataUrl = documentPageDataUrl;
@@ -333,6 +334,25 @@ export async function processTranscriptDocx(
     } catch (blobErr) {
       console.error("Vercel Blob upload warning:", blobErr.message);
     }
+  }
+
+  // Persist locally / server memory so any browser or mobile phone gets real data even if Vercel Blob is not configured
+  try {
+    await saveTranscriptData(id, {
+      metadata: {
+        ...metadata,
+        originalBlobUrl,
+        modifiedBlobUrl,
+        metadataBlobUrl,
+        photoBlobUrl,
+        parsedBlobUrl,
+      },
+      parsedData,
+      modifiedDocxBuffer,
+      photoBuffer: processedPhotoBuffer,
+    });
+  } catch (storeErr) {
+    console.warn("Could not save to local serverStore:", storeErr);
   }
 
   return {
