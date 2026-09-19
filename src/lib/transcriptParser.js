@@ -57,33 +57,45 @@ export async function parseDocxTranscript(arrayBuffer) {
   try {
     const zip = await JSZip.loadAsync(arrayBuffer);
 
-    // Extract images
+    // Extract media images
     let qrCodeDataUrl = null;
     let bannerDataUrl = null;
     let photoDataUrl = null;
 
-    const qrFile = zip.file("word/media/image2.png");
-    if (qrFile) {
-      const b64 = await qrFile.async("base64");
-      qrCodeDataUrl = `data:image/png;base64,${b64}`;
+    const mediaFiles = [];
+    zip.folder("word/media")?.forEach((relativePath, file) => {
+      mediaFiles.push({ path: `word/media/${relativePath}`, file });
+    });
+
+    for (const item of mediaFiles) {
+      const lower = item.path.toLowerCase();
+      const isImg = lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp");
+      if (!isImg) continue;
+
+      const b64 = await item.file.async("base64");
+      const mime = lower.endsWith(".png") ? "image/png" : "image/jpeg";
+      const dataUrl = `data:${mime};base64,${b64}`;
+
+      if (lower.includes("image2") || lower.includes("qr")) {
+        qrCodeDataUrl = dataUrl;
+      } else if (lower.includes("image1") || lower.includes("banner") || lower.includes("header")) {
+        bannerDataUrl = dataUrl;
+      } else if (lower.includes("photo") || lower.includes("image3") || lower.includes("image4")) {
+        photoDataUrl = dataUrl;
+      }
     }
 
-    const bannerFile = zip.file("word/media/image1.jpg") || zip.file("word/media/image1.png");
-    if (bannerFile) {
-      const b64 = await bannerFile.async("base64");
-      const mime = bannerFile.name.endsWith(".png") ? "image/png" : "image/jpeg";
-      bannerDataUrl = `data:${mime};base64,${b64}`;
-    }
-
-    const photoFile =
-      zip.file("word/media/image_photo.jpg") ||
-      zip.file("word/media/image_photo.png") ||
-      zip.file("word/media/image3.jpg") ||
-      zip.file("word/media/image3.png");
-    if (photoFile) {
-      const b64 = await photoFile.async("base64");
-      const mime = photoFile.name.endsWith(".png") ? "image/png" : "image/jpeg";
-      photoDataUrl = `data:${mime};base64,${b64}`;
+    // If photoDataUrl not assigned, take any remaining media file
+    if (!photoDataUrl) {
+      for (const item of mediaFiles) {
+        const lower = item.path.toLowerCase();
+        if (!lower.includes("image1") && !lower.includes("image2") && !lower.includes("qr")) {
+          const b64 = await item.file.async("base64");
+          const mime = lower.endsWith(".png") ? "image/png" : "image/jpeg";
+          photoDataUrl = `data:${mime};base64,${b64}`;
+          break;
+        }
+      }
     }
 
     // Parse document XML
