@@ -65,6 +65,7 @@ export async function POST(request) {
         photoBlobUrl: result.metadata.photoBlobUrl,
         metadataBlobUrl: result.metadata.metadataBlobUrl,
         modifiedDocxBase64: result.modifiedDocxBuffer.toString("base64"),
+        parsedData: result.parsedData,
       });
     }
 

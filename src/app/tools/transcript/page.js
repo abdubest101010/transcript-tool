@@ -168,6 +168,18 @@ export default function TranscriptToolPage() {
         timestamp: new Date().toISOString(),
       };
 
+      if (data.parsedData) {
+        try {
+          localStorage.setItem(`transcript_parsed_${data.id}`, JSON.stringify(data.parsedData));
+          sessionStorage.setItem(`transcript_parsed_${data.id}`, JSON.stringify(data.parsedData));
+          if (data.modifiedDocxBase64) {
+            localStorage.setItem(`transcript_doc_b64_${data.id}`, data.modifiedDocxBase64);
+          }
+        } catch (storageErr) {
+          console.warn("Could not save to localStorage:", storageErr);
+        }
+      }
+
       setResult(resultObj);
       saveToHistory(resultObj);
     } catch (err) {

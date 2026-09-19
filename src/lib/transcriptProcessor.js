@@ -26,14 +26,14 @@ function decodeQrFromPng(pngBuffer) {
 }
 
 /**
- * Generates a high-quality PNG buffer of a QR code.
+ * Generates a crisp, high-resolution PNG buffer of a QR code.
  */
-async function generateQrCodePng(url, width = 300) {
+async function generateQrCodePng(url, width = 600) {
   return await QRCode.toBuffer(url, {
     type: "png",
     width: width,
-    margin: 2,
-    errorCorrectionLevel: "H",
+    margin: 3,
+    errorCorrectionLevel: "M",
     color: {
       dark: "#000000",
       light: "#ffffff",
@@ -43,7 +43,7 @@ async function generateQrCodePng(url, width = 300) {
 
 /**
  * Processes a DOCX buffer and optional student photo:
- * 1. Replaces the QR code pointing to https://abdu-portfollio.vercel.app/t/{id}
+ * 1. Replaces the QR code pointing to https://transcript-tool-liart.vercel.app/t/{id}
  * 2. If photo is provided, center-crops/resizes it and places it in the photo box
  * 3. Saves documents, photo, and metadata to Vercel Blob
  */
@@ -195,10 +195,18 @@ export async function processTranscriptDocx(
     compressionOptions: { level: 9 },
   });
 
+  // Extract structured parsed transcript data directly from the generated buffer
+  const { parseDocxTranscript } = await import("./transcriptParser");
+  const parsedData = await parseDocxTranscript(modifiedDocxBuffer);
+  if (processedPhotoBuffer && !parsedData.photoDataUrl) {
+    parsedData.photoDataUrl = `data:image/jpeg;base64,${processedPhotoBuffer.toString("base64")}`;
+  }
+
   // Upload to Vercel Blob
   let originalBlobUrl = null;
   let modifiedBlobUrl = null;
   let metadataBlobUrl = null;
+  let parsedBlobUrl = null;
 
   const metadata = {
     id,
@@ -241,6 +249,12 @@ export async function processTranscriptDocx(
         contentType: "application/json",
       });
       metadataBlobUrl = metaBlob.url;
+
+      const pBlob = await put(`transcripts/${id}/parsedData.json`, JSON.stringify(parsedData, null, 2), {
+        access: "public",
+        contentType: "application/json",
+      });
+      parsedBlobUrl = pBlob.url;
     } catch (blobErr) {
       console.error("Vercel Blob upload warning:", blobErr.message);
     }
@@ -254,12 +268,14 @@ export async function processTranscriptDocx(
     modifiedDocxBuffer,
     photoBuffer: processedPhotoBuffer,
     photoBlobUrl,
+    parsedData,
     metadata: {
       ...metadata,
       originalBlobUrl,
       modifiedBlobUrl,
       metadataBlobUrl,
       photoBlobUrl,
+      parsedBlobUrl,
     },
   };
 }

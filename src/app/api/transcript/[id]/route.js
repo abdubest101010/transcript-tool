@@ -24,21 +24,34 @@ export async function GET(request, { params }) {
     });
 
     const metaBlob = blobs.find((b) => b.pathname.endsWith("metadata.json"));
+    const parsedBlob = blobs.find((b) => b.pathname.endsWith("parsedData.json"));
+
+    let metadata = {};
+    let parsedData = null;
+
     if (metaBlob) {
-      const res = await fetch(metaBlob.url);
-      if (res.ok) {
-        const metadata = await res.json();
-        return NextResponse.json({
-          verified: true,
-          ...metadata,
-          blobs,
-        });
-      }
+      try {
+        const res = await fetch(metaBlob.downloadUrl || metaBlob.url);
+        if (res.ok) {
+          metadata = await res.json();
+        }
+      } catch (e) {}
+    }
+
+    if (parsedBlob) {
+      try {
+        const res = await fetch(parsedBlob.downloadUrl || parsedBlob.url);
+        if (res.ok) {
+          parsedData = await res.json();
+        }
+      } catch (e) {}
     }
 
     return NextResponse.json({
       id,
       verified: true,
+      ...metadata,
+      parsedData,
       blobs,
     });
   } catch (err) {
