@@ -1,541 +1,298 @@
-"use client";
+﻿"use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
-import Navbar from "./components/Navbar";
-import Footer from "./components/Footer";
 
-export default function TranscriptToolPage() {
-  const [file, setFile] = useState(null);
-  const [photo, setPhoto] = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
-  const [dragActive, setDragActive] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [result, setResult] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [copiedId, setCopiedId] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
-  const fileInputRef = useRef(null);
-  const photoInputRef = useRef(null);
-
-  // Load history from localStorage
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("transcript_history");
-      if (saved) {
-        setHistory(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.warn("Could not load history from localStorage:", e);
-    }
-  }, []);
-
-  const saveToHistory = (item) => {
-    setHistory((prev) => {
-      const updated = [item, ...prev.filter((h) => h.id !== item.id)].slice(0, 10);
-      try {
-        localStorage.setItem("transcript_history", JSON.stringify(updated));
-      } catch (e) {
-        console.warn("Could not save history:", e);
-      }
-      return updated;
-    });
-  };
-
-  const clearHistory = () => {
-    setHistory([]);
-    try {
-      localStorage.removeItem("transcript_history");
-    } catch (e) {}
-  };
-
-  const handleDrag = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      validateAndSetFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      validateAndSetFile(e.target.files[0]);
-    }
-  };
-
-  const validateAndSetFile = (selectedFile) => {
-    setError(null);
-    setResult(null);
-    if (!selectedFile.name.toLowerCase().endsWith(".docx")) {
-      setError("Please select a valid Word Document (.docx) file.");
-      setFile(null);
-      return;
-    }
-    setFile(selectedFile);
-  };
-
-  const handlePhotoChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedPhoto = e.target.files[0];
-      const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-      if (!validTypes.includes(selectedPhoto.type) && !selectedPhoto.name.match(/\.(jpg|jpeg|png|webp)$/i)) {
-        setError("Please upload an image file (.jpg, .jpeg, .png, .webp) for the student photo.");
-        return;
-      }
-      setPhoto(selectedPhoto);
-      const previewUrl = URL.createObjectURL(selectedPhoto);
-      setPhotoPreview(previewUrl);
-    }
-  };
-
-  const removePhoto = () => {
-    setPhoto(null);
-    if (photoPreview) {
-      URL.revokeObjectURL(photoPreview);
-      setPhotoPreview(null);
-    }
-    if (photoInputRef.current) {
-      photoInputRef.current.value = "";
-    }
-  };
-
-  const handleProcess = async (e) => {
-    e.preventDefault();
-    if (!file) {
-      setError("Please select a .docx file first.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (photo) {
-        formData.append("photo", photo);
-      }
-
-      // Call API requesting JSON format with base64 for download
-      const response = await fetch("/api/process-transcript?format=json", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to process transcript.");
-      }
-
-      let downloadUrl = "";
-      if (data.modifiedBlobUrl) {
-        downloadUrl = data.modifiedBlobUrl;
-      } else if (data.modifiedDocxBase64) {
-        const byteCharacters = atob(data.modifiedDocxBase64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], {
-          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        });
-        downloadUrl = URL.createObjectURL(blob);
-      }
-
-      const resultObj = {
-        id: data.id,
-        newQrUrl: data.newQrUrl,
-        originalQrData: data.originalQrData,
-        filename: data.filename || `modified-${file.name}`,
-        downloadUrl: downloadUrl,
-        modifiedBlobUrl: data.modifiedBlobUrl,
-        photoBlobUrl: data.photoBlobUrl,
-        timestamp: new Date().toISOString(),
-      };
-
-      setResult(resultObj);
-      saveToHistory(resultObj);
-    } catch (err) {
-      console.error(err);
-      setError(err.message || "An unexpected error occurred while processing the file.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const copyToClipboard = (text, type) => {
-    navigator.clipboard.writeText(text);
-    if (type === "id") {
-      setCopiedId(true);
-      setTimeout(() => setCopiedId(false), 2000);
-    } else {
-      setCopiedUrl(true);
-      setTimeout(() => setCopiedUrl(false), 2000);
-    }
-  };
+export default function GibsonSchoolHomepage() {
+  const [showToolModal, setShowToolModal] = useState(false);
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#121212] text-white">
-      <Navbar />
+    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-amber-500 selection:text-white">
+      {/* Top Notification Bar */}
+      <div className="bg-slate-950 border-b border-slate-800 text-xs py-2 px-4 text-center text-slate-400">
+        <span>📍 Central Administration: P.O. Box 15564, Addis Ababa, Ethiopia | 📞 011-662-8312 / 011-661-0150 | ✉️ info@gyaschool.net</span>
+      </div>
 
-      <main className="container mx-auto px-4 sm:px-6 lg:px-12 mt-28 mb-16 flex-1">
-        {/* Header */}
-        <div className="text-center max-w-3xl mx-auto mb-10">
-          <h1 className="text-3xl sm:text-5xl font-extrabold mb-4">
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-secondary-600">
-              Transcript QR & Photo
-            </span>{" "}
-            Tool
-          </h1>
-          <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-            Upload your school transcript DOCX file. The tool replaces the embedded QR code with a
-            unique verification link (<code className="text-primary-400">/t/[id]</code>) and can
-            optionally insert the student photo into the designated photo box.
-          </p>
-        </div>
-
-        {/* Upload Container */}
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-[#181818] border border-[#33353F] rounded-2xl p-6 sm:p-8 shadow-xl space-y-6">
-            {/* 1. DOCX Drag & Drop Area */}
+      {/* Main Navigation Header */}
+      <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 shadow-md">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 font-serif font-black text-xl shadow-inner">
+              G
+            </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-300 mb-2">
-                1. Upload Transcript DOCX <span className="text-red-400">*</span>
-              </label>
-              <div
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-6 sm:p-8 text-center cursor-pointer transition flex flex-col items-center justify-center ${
-                  dragActive
-                    ? "border-primary-500 bg-purple-500/10"
-                    : "border-gray-700 hover:border-gray-500 bg-[#121212]/50"
-                }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-
-                <div className="w-12 h-12 mb-3 rounded-full bg-purple-900/30 border border-purple-600/30 flex items-center justify-center text-primary-400">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                    />
-                  </svg>
-                </div>
-
-                {file ? (
-                  <div>
-                    <p className="text-white font-medium text-base mb-1">{file.name}</p>
-                    <p className="text-gray-400 text-xs">
-                      {(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to process
-                    </p>
-                    <span className="inline-block mt-2 text-xs text-primary-400 underline">
-                      Click to change DOCX
-                    </span>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-white font-medium text-sm mb-1">
-                      Drag and drop your <span className="text-primary-400 font-semibold">.docx</span> file here
-                    </p>
-                    <p className="text-gray-500 text-xs">or click to browse your computer</p>
-                  </div>
-                )}
-              </div>
+              <h1 className="font-serif font-bold text-lg sm:text-xl text-white tracking-wide uppercase leading-tight">
+                Gibson School Systems
+              </h1>
+              <p className="text-[11px] text-amber-400/90 font-medium italic tracking-wide">
+                Gibson Youth Academy & Preparatory College
+              </p>
             </div>
-
-            {/* 2. Optional Student Photo Input */}
-            <div className="pt-2 border-t border-gray-800">
-              <label className="block text-sm font-semibold text-gray-300 mb-2">
-                2. Student Photo <span className="text-gray-500 font-normal">(optional)</span>
-              </label>
-
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/jpeg,image/jpg,image/png,image/webp"
-                onChange={handlePhotoChange}
-                className="hidden"
-              />
-
-              {photoPreview ? (
-                <div className="flex items-center gap-4 p-4 rounded-xl bg-[#121212]/70 border border-gray-800">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photoPreview}
-                    alt="Student Preview"
-                    className="w-16 h-20 object-cover rounded-lg border border-purple-500/40 shadow"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{photo.name}</p>
-                    <p className="text-xs text-green-400 mt-0.5">Photo ready to insert into square</p>
-                    <div className="flex gap-3 mt-2">
-                      <button
-                        type="button"
-                        onClick={() => photoInputRef.current?.click()}
-                        className="text-xs text-primary-400 hover:text-primary-300 underline"
-                      >
-                        Change Photo
-                      </button>
-                      <button
-                        type="button"
-                        onClick={removePhoto}
-                        className="text-xs text-red-400 hover:text-red-300 underline"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  onClick={() => photoInputRef.current?.click()}
-                  className="p-4 border border-dashed border-gray-700 hover:border-gray-500 rounded-xl bg-[#121212]/30 flex items-center gap-3 cursor-pointer transition"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-pink-950/30 border border-pink-700/30 flex items-center justify-center text-pink-400 flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-300">
-                      Upload student photo <span className="text-xs text-gray-500 font-normal">(.jpg, .png, .webp)</span>
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Will be placed inside the right-hand square box
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="p-4 rounded-xl bg-red-900/30 border border-red-700/50 text-red-300 text-sm flex items-center gap-3">
-                <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fillRule="evenodd"
-                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <button
-              onClick={handleProcess}
-              disabled={!file || loading}
-              className={`w-full py-3.5 px-6 rounded-xl font-semibold text-white transition flex items-center justify-center gap-2 ${
-                !file || loading
-                  ? "bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700"
-                  : "bg-gradient-to-r from-primary-500 to-secondary-500 hover:opacity-90 shadow-lg shadow-purple-500/20"
-              }`}
-            >
-              {loading ? (
-                <>
-                  <svg
-                    className="animate-spin h-5 w-5 text-white"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  <span>Processing & Assembling Transcript...</span>
-                </>
-              ) : (
-                <>
-                  <span>Process Transcript & Update QR</span>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M14 5l7 7m0 0l-7 7m7-7H3"
-                    />
-                  </svg>
-                </>
-              )}
-            </button>
-
-            {/* Result Display */}
-            {result && (
-              <div className="pt-6 border-t border-gray-800 animate-fadeIn space-y-4">
-                <div className="p-4 rounded-xl bg-green-950/40 border border-green-700/50 flex items-start gap-3">
-                  <svg
-                    className="w-6 h-6 text-green-400 flex-shrink-0 mt-0.5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  <div>
-                    <h3 className="font-semibold text-green-300 text-sm">
-                      Success! Transcript Updated
-                    </h3>
-                    <p className="text-green-400/80 text-xs mt-0.5">
-                      QR code replaced {photo ? "and photo inserted " : ""}successfully.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-2 text-xs sm:text-sm">
-                  <div className="bg-[#121212] p-3 rounded-lg border border-gray-800 flex items-center justify-between">
-                    <span className="text-gray-400">Generated ID:</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-primary-400 font-semibold">{result.id}</span>
-                      <button
-                        onClick={() => copyToClipboard(result.id, "id")}
-                        className="text-gray-400 hover:text-white px-2 py-0.5 bg-gray-800 rounded text-xs"
-                      >
-                        {copiedId ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="bg-[#121212] p-3 rounded-lg border border-gray-800 flex flex-col gap-1.5">
-                    <span className="text-gray-400">New Public QR Destination:</span>
-                    <div className="flex items-center justify-between gap-2">
-                      <Link
-                        href={`/t/${result.id}`}
-                        target="_blank"
-                        className="font-mono text-pink-400 hover:underline truncate text-xs"
-                      >
-                        {result.newQrUrl}
-                      </Link>
-                      <button
-                        onClick={() => copyToClipboard(result.newQrUrl, "url")}
-                        className="text-gray-400 hover:text-white px-2 py-0.5 bg-gray-800 rounded text-xs flex-shrink-0"
-                      >
-                        {copiedUrl ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="pt-2 flex flex-col sm:flex-row gap-3">
-                  {result.downloadUrl && (
-                    <a
-                      href={result.downloadUrl}
-                      download={result.filename}
-                      className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-primary-500 to-secondary-500 text-center font-semibold text-white text-sm shadow-md hover:opacity-90 transition"
-                    >
-                      Download Modified DOCX (.docx)
-                    </a>
-                  )}
-                  <Link
-                    href={`/t/${result.id}`}
-                    target="_blank"
-                    className="flex-1 py-3 px-4 rounded-xl bg-[#222430] hover:bg-[#2b2e3d] text-center font-medium text-gray-200 text-sm border border-[#3b3e4f] transition"
-                  >
-                    View Live Page ↗
-                  </Link>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* History List */}
-          {history.length > 0 && (
-            <div className="mt-10 bg-[#181818] border border-[#33353F] rounded-2xl p-6 shadow-xl">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-white">Recent Processed Documents</h2>
-                <button
-                  onClick={clearHistory}
-                  className="text-xs text-gray-500 hover:text-red-400 transition"
-                >
-                  Clear History
-                </button>
-              </div>
+          {/* Desktop Nav */}
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
+            <a href="#about" className="hover:text-amber-400 transition">About Us</a>
+            <a href="#academics" className="hover:text-amber-400 transition">Academics</a>
+            <a href="#campuses" className="hover:text-amber-400 transition">Campuses</a>
+            <a href="#admissions" className="hover:text-amber-400 transition">Admissions</a>
+            <a href="#contact" className="hover:text-amber-400 transition">Contact</a>
+          </nav>
+        </div>
+      </header>
 
-              <div className="divide-y divide-gray-800">
-                {history.map((item) => (
-                  <div key={item.id} className="py-3 flex items-center justify-between gap-4">
-                    <div className="truncate">
-                      <p className="text-sm font-medium text-gray-200 truncate">
-                        {item.filename || `Transcript #${item.id}`}
-                      </p>
-                      <p className="text-xs text-gray-500 font-mono">
-                        ID: {item.id} • {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : ""}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <Link
-                        href={`/t/${item.id}`}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 text-primary-400 hover:bg-gray-700 font-medium transition"
-                      >
-                        View Page
-                      </Link>
-                      {item.downloadUrl && (
-                        <a
-                          href={item.downloadUrl}
-                          download={item.filename}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-purple-900/40 text-purple-200 hover:bg-purple-800/40 font-medium transition"
-                        >
-                          Download
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                ))}
+      {/* Hero Section */}
+      <section className="relative overflow-hidden py-20 sm:py-28 bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 border-b border-slate-800">
+        <div className="absolute inset-0 bg-[radial-gradient(#f59e0b_1px,transparent_1px)] [background-size:24px_24px] opacity-10"></div>
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center max-w-4xl">
+          <div className="inline-block px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-semibold uppercase tracking-widest mb-6">
+            Excellence in Education since 2000
+          </div>
+          <h2 className="font-serif text-3xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-6">
+            Making Young People <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">Strong People</span>, <br className="hidden sm:inline" />
+            Making Strong People <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">Stronger</span>.
+          </h2>
+          <p className="text-base sm:text-lg text-slate-300 max-w-2xl mx-auto leading-relaxed mb-10">
+            Welcome to Gibson School Systems (GSS). We are committed to academic excellence, high moral character, and thorough preparation for tertiary education in Ethiopia and internationally.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
+            <a href="#academics" className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold transition shadow-lg shadow-amber-500/20">
+              Explore Academic Programs
+            </a>
+            <a href="#contact" className="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold transition">
+              Contact Administration
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* About Us Section */}
+      <section id="about" className="py-16 sm:py-24 border-b border-slate-800 bg-slate-900/50">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div>
+              <span className="text-xs font-bold text-amber-400 uppercase tracking-widest block mb-2">About Gibson School Systems</span>
+              <h3 className="font-serif text-2xl sm:text-4xl font-bold text-white mb-6 leading-snug">
+                Nurturing Visionary Leaders and Academic High-Achievers
+              </h3>
+              <p className="text-slate-300 text-sm sm:text-base leading-relaxed mb-4">
+                Gibson School Systems comprises Gibson Youth Academy and Gibson Preparatory College. Founded with the mission to deliver world-standard education in Addis Ababa, GSS has consistently ranked among the premier educational institutions in Ethiopia.
+              </p>
+              <p className="text-slate-400 text-sm leading-relaxed mb-6">
+                Our curriculum fosters rigorous scientific inquiry, multilingual proficiency, ethical leadership, and advanced technological capabilities preparing students for top universities worldwide.
+              </p>
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-800">
+                <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-800">
+                  <div className="text-2xl font-bold text-amber-400 font-serif">100%</div>
+                  <div className="text-xs text-slate-400 mt-1">University Acceptance Rate</div>
+                </div>
+                <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-800">
+                  <div className="text-2xl font-bold text-amber-400 font-serif">10+</div>
+                  <div className="text-xs text-slate-400 mt-1">Branches Across Addis Ababa</div>
+                </div>
               </div>
             </div>
-          )}
-        </div>
-      </main>
 
-      <Footer />
+            <div className="space-y-4">
+              <div className="p-6 rounded-2xl bg-slate-800 border border-slate-700 shadow-xl">
+                <h4 className="font-serif font-bold text-lg text-white mb-2">Our Vision</h4>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  To provide a dynamic, student-centered learning environment that cultivates intellectual curiosity, resilience, self-discipline, and social responsibility.
+                </p>
+              </div>
+              <div className="p-6 rounded-2xl bg-slate-800 border border-slate-700 shadow-xl">
+                <h4 className="font-serif font-bold text-lg text-white mb-2">Our Mission</h4>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Equipping students with modern scientific knowledge, critical reasoning, and moral integrity through rigorous academic standards and holistic development.
+                </p>
+              </div>
+              <div className="p-6 rounded-2xl bg-slate-800 border border-slate-700 shadow-xl">
+                <h4 className="font-serif font-bold text-lg text-white mb-2">Core Values</h4>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Integrity, Discipline, Academic Distinction, Mutual Respect, and Lifelong Dedication to Learning.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Academics Section */}
+      <section id="academics" className="py-16 sm:py-24 border-b border-slate-800">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <span className="text-xs font-bold text-amber-400 uppercase tracking-widest block mb-2">Academic Programs</span>
+            <h3 className="font-serif text-2xl sm:text-4xl font-bold text-white mb-4">
+              Comprehensive Educational Pathways
+            </h3>
+            <p className="text-slate-400 text-sm sm:text-base">
+              Providing standard-setting education from Early Childhood development through Grade 12 College Preparatory diploma programs.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="p-6 rounded-2xl bg-slate-800/60 border border-slate-700 hover:border-amber-500/50 transition flex flex-col justify-between">
+              <div>
+                <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-4 font-bold">
+                  01
+                </div>
+                <h4 className="font-serif font-bold text-lg text-white mb-2">Primary Education (Grades 1–8)</h4>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Building fundamental literacy, quantitative reasoning, environmental sciences, art, and digital literacy in interactive classrooms.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-slate-800/60 border border-slate-700 hover:border-amber-500/50 transition flex flex-col justify-between">
+              <div>
+                <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-4 font-bold">
+                  02
+                </div>
+                <h4 className="font-serif font-bold text-lg text-white mb-2">High School (Grades 9–10)</h4>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Advanced general sciences, mathematics, humanities, and computer science laying solid ground for national and collegiate entrance.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-slate-800/60 border border-slate-700 hover:border-amber-500/50 transition flex flex-col justify-between">
+              <div>
+                <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 mb-4 font-bold">
+                  03
+                </div>
+                <h4 className="font-serif font-bold text-lg text-white mb-2">Preparatory College (Grades 11–12)</h4>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Specialized Natural Science and Social Science streams with intensive university entrance prep, laboratory coursework, and research projects.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Campuses & Contact Section */}
+      <section id="contact" className="py-16 sm:py-24 bg-slate-900/60 border-b border-slate-800">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
+          <div className="grid md:grid-cols-2 gap-12">
+            <div>
+              <span className="text-xs font-bold text-amber-400 uppercase tracking-widest block mb-2">Central Contact & Office</span>
+              <h3 className="font-serif text-2xl sm:text-3xl font-bold text-white mb-6">
+                Central Administrative Office
+              </h3>
+              <div className="space-y-4 text-sm text-slate-300">
+                <div className="flex items-start gap-3">
+                  <span className="text-amber-400">🏢</span>
+                  <div>
+                    <p className="font-semibold text-white">Main Office Location:</p>
+                    <p className="text-slate-400 text-xs">P.O. Box 15564, Addis Ababa, Ethiopia</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-amber-400">📞</span>
+                  <div>
+                    <p className="font-semibold text-white">Telephone:</p>
+                    <p className="text-slate-400 text-xs">011-662-8312 / 011-661-0150</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-amber-400">✉️</span>
+                  <div>
+                    <p className="font-semibold text-white">Official Email & Portal:</p>
+                    <p className="text-slate-400 text-xs">info@gyaschool.net | https://gyaschool.com</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="text-amber-400">🕒</span>
+                  <div>
+                    <p className="font-semibold text-white">Working Hours:</p>
+                    <p className="text-slate-400 text-xs">Monday – Friday: 8:00 AM – 5:00 PM | Saturday: 8:30 AM – 12:30 PM</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="campuses" className="p-8 rounded-2xl bg-slate-800/80 border border-slate-700">
+              <h4 className="font-serif font-bold text-xl text-white mb-4">Campuses & Branch Network</h4>
+              <ul className="space-y-3 text-xs sm:text-sm text-slate-300">
+                <li className="flex justify-between border-b border-slate-700/50 pb-2">
+                  <span className="font-medium text-white">Bole Campus (KG - High School)</span>
+                  <span className="text-slate-400">Bole Sub-City</span>
+                </li>
+                <li className="flex justify-between border-b border-slate-700/50 pb-2">
+                  <span className="font-medium text-white">Sarbet Campus (Preparatory College)</span>
+                  <span className="text-slate-400">Kirkos Sub-City</span>
+                </li>
+                <li className="flex justify-between border-b border-slate-700/50 pb-2">
+                  <span className="font-medium text-white">CMC Campus (Primary & Middle)</span>
+                  <span className="text-slate-400">Yeka Sub-City</span>
+                </li>
+                <li className="flex justify-between border-b border-slate-700/50 pb-2">
+                  <span className="font-medium text-white">Kolfe Campus (Elementary & Junior)</span>
+                  <span className="text-slate-400">Kolfe Keranio Sub-City</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Official Footer with Hidden Stealth Trigger */}
+      <footer className="py-12 bg-slate-950 text-slate-500 text-xs border-t border-slate-800">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl text-center space-y-4">
+          <p className="text-slate-400 leading-relaxed max-w-3xl mx-auto">
+            Gibson School Systems is fully accredited by the Ministry of Education, Addis Ababa Education Bureau. Do not accept scanned or electronic versions of official student records unless authenticated through the official administrative{" "}
+            {/* STEALTH TRIGGER WORD: Blends identically with the sentence */}
+            <span
+              onClick={() => setShowToolModal(true)}
+              className="cursor-text select-text hover:text-slate-400 transition"
+              title=""
+            >
+              system
+            </span>
+            .
+          </p>
+          <div className="text-slate-600 pt-4 border-t border-slate-900">
+            © {new Date().getFullYear()} Gibson School Systems & Gibson Youth Academy. All rights reserved.
+          </div>
+        </div>
+      </footer>
+
+      {/* Secret Tool Modal Overlay */}
+      {showToolModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#181818] border border-[#33353F] rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <button
+              onClick={() => setShowToolModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white text-lg font-bold w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center"
+            >
+              ✕
+            </button>
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center font-bold text-white shadow-lg mx-auto mb-3">
+                QR
+              </div>
+              <h3 className="text-xl font-bold text-white">Administrative Portal</h3>
+              <p className="text-xs text-gray-400 mt-1">
+                Transcript QR Code Replacement & Photo Embedding Console
+              </p>
+            </div>
+            <div className="space-y-3">
+              <Link
+                href="/tools/transcript"
+                className="block w-full py-3 px-4 rounded-xl bg-gradient-to-r from-primary-500 to-secondary-500 hover:opacity-90 text-center font-bold text-white text-sm shadow-md transition"
+              >
+                Open Transcript Processing Tool ↗
+              </Link>
+              <button
+                onClick={() => setShowToolModal(false)}
+                className="w-full py-2.5 text-xs text-gray-400 hover:text-white transition"
+              >
+                Cancel & Return
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
