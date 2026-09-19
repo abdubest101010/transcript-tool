@@ -13,12 +13,16 @@ const generateNanoid = customAlphabet(
 );
 
 /**
- * Attempts to decode a QR code from a PNG buffer.
+ * Attempts to decode a QR code from any image format (PNG, JPEG, WebP, etc.).
  */
-function decodeQrFromPng(pngBuffer) {
+async function decodeQrFromAnyImage(imageBuffer) {
   try {
-    const png = PNG.sync.read(pngBuffer);
-    const code = jsQR(new Uint8Array(png.data), png.width, png.height);
+    const { data, info } = await sharp(imageBuffer)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const code = jsQR(new Uint8ClampedArray(data), info.width, info.height);
     return code ? code.data : null;
   } catch (err) {
     return null;
@@ -74,44 +78,41 @@ export async function processTranscriptDocx(
     mediaFiles.push({ path: `word/media/${relativePath}`, file });
   });
 
-  // Check word/media/image2.png first
-  const image2 = zip.file("word/media/image2.png");
-  if (image2) {
-    const imgBuf = await image2.async("nodebuffer");
-    const decoded = decodeQrFromPng(imgBuf);
-    if (decoded) {
-      originalQrData = decoded;
-    }
-    targetImagePath = "word/media/image2.png";
-  }
-
-  // If not found, scan other media images
-  if (!targetImagePath || !originalQrData) {
-    for (const item of mediaFiles) {
-      if (
-        item.path.toLowerCase().endsWith(".png") ||
-        item.path.toLowerCase().endsWith(".jpg") ||
-        item.path.toLowerCase().endsWith(".jpeg")
-      ) {
-        try {
-          const imgBuf = await item.file.async("nodebuffer");
-          const decoded = decodeQrFromPng(imgBuf);
+  // Scan all media images to find the exact QR code
+  for (const item of mediaFiles) {
+    if (
+      item.path.toLowerCase().endsWith(".png") ||
+      item.path.toLowerCase().endsWith(".jpg") ||
+      item.path.toLowerCase().endsWith(".jpeg") ||
+      item.path.toLowerCase().endsWith(".webp")
+    ) {
+      try {
+        const imgBuf = await item.file.async("nodebuffer");
+        if (imgBuf.length > 0) {
+          const decoded = await decodeQrFromAnyImage(imgBuf);
           if (decoded) {
             originalQrData = decoded;
             targetImagePath = item.path;
             break;
           }
-        } catch (e) {}
-      }
+        }
+      } catch (e) {}
     }
   }
 
   if (!targetImagePath) {
-    targetImagePath = image2 ? "word/media/image2.png" : "word/media/image2.png";
+    const img2 = zip.file("word/media/image2.png");
+    targetImagePath = img2 ? "word/media/image2.png" : (mediaFiles[0]?.path || "word/media/image2.png");
   }
 
-  // Generate and replace QR
-  const newQrBuffer = await generateQrCodePng(newQrUrl, 260);
+  // Generate crisp 600px high resolution QR code buffer
+  const isTargetJpg = targetImagePath.toLowerCase().endsWith(".jpg") || targetImagePath.toLowerCase().endsWith(".jpeg");
+  let newQrBuffer = await generateQrCodePng(newQrUrl, 600);
+
+  if (isTargetJpg) {
+    newQrBuffer = await sharp(newQrBuffer).jpeg({ quality: 95 }).toBuffer();
+  }
+
   zip.file(targetImagePath, newQrBuffer);
 
   // Process optional Student Photo
