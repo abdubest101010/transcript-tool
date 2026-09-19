@@ -51,13 +51,15 @@ export async function processTranscriptDocx(
   fileBuffer,
   originalFilename = "transcript.docx",
   photoBuffer = null,
-  photoFilename = "photo.jpg"
+  photoFilename = "photo.jpg",
+  customBaseUrl = null
 ) {
   const id = generateNanoid();
   const baseUrl =
+    customBaseUrl ||
     process.env.NEXT_PUBLIC_BASE_URL ||
     process.env.NEXT_PUBLIC_SITE_URL ||
-    "https://abdu-portfollio.vercel.app";
+    "https://transcript-tool-liart.vercel.app";
 
   const newQrUrl = `${baseUrl.replace(/\/$/, "")}/t/${id}`;
 

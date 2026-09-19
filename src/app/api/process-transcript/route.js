@@ -36,12 +36,17 @@ export async function POST(request) {
       photoFilename = photo.name || "photo.jpg";
     }
 
-    // Process the transcript with optional photo
+    const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+    const proto = request.headers.get("x-forwarded-proto") || (host && host.includes("localhost") ? "http" : "https");
+    const dynamicBaseUrl = host ? `${proto}://${host}` : null;
+
+    // Process the transcript with optional photo and dynamic baseUrl
     const result = await processTranscriptDocx(
       fileBuffer,
       filename,
       photoBuffer,
-      photoFilename
+      photoFilename,
+      dynamicBaseUrl
     );
 
     const format = request.nextUrl.searchParams.get("format");
