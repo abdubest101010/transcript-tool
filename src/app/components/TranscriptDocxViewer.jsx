@@ -1,26 +1,94 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import QRCode from "qrcode";
 import { parseDocxTranscript, getDefaultTranscriptData } from "../../lib/transcriptParser";
 import GibsonTranscriptRenderer from "./GibsonTranscriptRenderer";
 
 export default function TranscriptDocxViewer({ id, docxUrl, photoBlobUrl, initialData = null }) {
-  const [loading, setLoading] = useState(!initialData);
+  const [loading, setLoading] = useState(true);
+  const [useDocxPreview, setUseDocxPreview] = useState(false);
   const [transcriptData, setTranscriptData] = useState(initialData);
+  const containerRef = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadAndParse() {
+    async function loadDocument() {
       try {
-        if (!initialData) {
-          setLoading(true);
+        setLoading(true);
+
+        let arrayBuffer = null;
+
+        // 1. Try to get base64 docx from localStorage or sessionStorage
+        if (typeof window !== "undefined") {
+          try {
+            const savedB64 =
+              localStorage.getItem(`transcript_doc_b64_${id}`) ||
+              sessionStorage.getItem(`transcript_doc_b64_${id}`);
+            if (savedB64) {
+              const byteCharacters = atob(savedB64);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              arrayBuffer = byteArray.buffer;
+            }
+          } catch (e) {
+            console.warn("Could not read base64 docx from storage:", e);
+          }
         }
 
+        // 2. If not in local storage, fetch from serverless blob / API download
+        if (!arrayBuffer) {
+          const fileUrl = docxUrl || `/api/transcript/${id}/download`;
+          try {
+            const response = await fetch(fileUrl);
+            if (response.ok) {
+              arrayBuffer = await response.arrayBuffer();
+            }
+          } catch (fetchErr) {
+            console.warn("Could not fetch docx binary from API:", fetchErr);
+          }
+        }
+
+        // 3. If arrayBuffer is available, render natively with docx-preview for 100% exact fidelity!
+        if (arrayBuffer && containerRef.current) {
+          try {
+            const docx = await import("docx-preview");
+            if (containerRef.current && isMounted) {
+              containerRef.current.innerHTML = "";
+              await docx.renderAsync(arrayBuffer, containerRef.current, null, {
+                className: "docx-exact-view",
+                inWrapper: false,
+                ignoreWidth: false,
+                ignoreHeight: false,
+                ignoreFonts: false,
+                breakPages: false,
+                renderHeaders: true,
+                renderFooters: true,
+                useBase64URL: true,
+              });
+
+              if (isMounted) {
+                setUseDocxPreview(true);
+                setLoading(false);
+              }
+              return;
+            }
+          } catch (docxPreviewErr) {
+            console.warn("docx-preview render error, falling back to parsed renderer:", docxPreviewErr);
+          }
+        }
+
+        // 4. Fallback: Parse structured data or use stored parsedData
         let data = initialData ? { ...initialData } : null;
 
-        // 1. Check localStorage / sessionStorage for saved transcript data
+        if (!data && arrayBuffer) {
+          data = await parseDocxTranscript(arrayBuffer);
+        }
+
         if (!data && typeof window !== "undefined") {
           try {
             const savedParsed =
@@ -29,30 +97,9 @@ export default function TranscriptDocxViewer({ id, docxUrl, photoBlobUrl, initia
             if (savedParsed) {
               data = JSON.parse(savedParsed);
             }
-          } catch (e) {
-            console.warn("Could not read from local storage:", e);
-          }
+          } catch (e) {}
         }
 
-        // 2. If base64 docx buffer was saved in localStorage, parse it
-        if (!data && typeof window !== "undefined") {
-          try {
-            const savedB64 = localStorage.getItem(`transcript_doc_b64_${id}`);
-            if (savedB64) {
-              const byteCharacters = atob(savedB64);
-              const byteNumbers = new Array(byteCharacters.length);
-              for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
-              }
-              const byteArray = new Uint8Array(byteNumbers);
-              data = await parseDocxTranscript(byteArray.buffer);
-            }
-          } catch (e) {
-            console.warn("Could not parse docx from localStorage:", e);
-          }
-        }
-
-        // 3. Query the transcript API endpoint for parsedData or metadata
         if (!data) {
           try {
             const metaRes = await fetch(`/api/transcript/${id}`);
@@ -62,26 +109,9 @@ export default function TranscriptDocxViewer({ id, docxUrl, photoBlobUrl, initia
                 data = metaJson.parsedData;
               }
             }
-          } catch (apiErr) {
-            console.warn("Could not fetch metadata from API:", apiErr);
-          }
+          } catch (apiErr) {}
         }
 
-        // 4. Try fetching uploaded docx binary
-        if (!data) {
-          const fileUrl = docxUrl || `/api/transcript/${id}/download`;
-          try {
-            const response = await fetch(fileUrl);
-            if (response.ok) {
-              const arrayBuffer = await response.arrayBuffer();
-              data = await parseDocxTranscript(arrayBuffer);
-            }
-          } catch (fetchErr) {
-            console.warn("Could not fetch uploaded docx binary:", fetchErr);
-          }
-        }
-
-        // 5. If still completely unfound, use default transcript structure
         if (!data) {
           data = getDefaultTranscriptData();
         }
@@ -90,7 +120,6 @@ export default function TranscriptDocxViewer({ id, docxUrl, photoBlobUrl, initia
           data.photoBlobUrl = photoBlobUrl;
         }
 
-        // 6. Ensure high-resolution, clear QR code is generated for verification
         if (!data.qrCodeDataUrl) {
           try {
             const currentUrl =
@@ -102,26 +131,25 @@ export default function TranscriptDocxViewer({ id, docxUrl, photoBlobUrl, initia
               errorCorrectionLevel: "M",
               width: 400,
             });
-          } catch (qrErr) {
-            console.warn("QR code generation error:", qrErr);
-          }
+          } catch (qrErr) {}
         }
 
         if (isMounted) {
           setTranscriptData(data);
+          setUseDocxPreview(false);
           setLoading(false);
         }
       } catch (err) {
-        console.error("Rendering error:", err);
+        console.error("General render error:", err);
         if (isMounted) {
-          const fallback = getDefaultTranscriptData();
-          setTranscriptData(fallback);
+          setTranscriptData(getDefaultTranscriptData());
+          setUseDocxPreview(false);
           setLoading(false);
         }
       }
     }
 
-    loadAndParse();
+    loadDocument();
 
     return () => {
       isMounted = false;
@@ -138,13 +166,24 @@ export default function TranscriptDocxViewer({ id, docxUrl, photoBlobUrl, initia
       )}
 
       {/* Main Document Viewport with Left-to-Right Horizontal Scrolling Support & Unveiling Animation */}
-      {!loading && transcriptData && (
-        <div className="w-full overflow-x-auto docx-scroll-wrapper pb-10 flex flex-col items-start sm:items-center animate-unveil">
-          <div className="min-w-fit mx-auto">
+      <div
+        className={`w-full overflow-x-auto docx-scroll-wrapper pb-10 flex flex-col items-start sm:items-center animate-unveil ${
+          loading ? "hidden" : "block"
+        }`}
+      >
+        <div className="min-w-fit mx-auto bg-white">
+          {/* Exact DOCX DOM Container */}
+          <div
+            ref={containerRef}
+            className={`docx-exact-container ${useDocxPreview ? "block" : "hidden"}`}
+          />
+
+          {/* Backup Structured Renderer */}
+          {!useDocxPreview && transcriptData && (
             <GibsonTranscriptRenderer data={transcriptData} />
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -34,7 +34,8 @@ body {
 }
 
 .docx-custom-container .docx-wrapper,
-.docx-wrapper {
+.docx-wrapper,
+.docx-exact-container {
   background: transparent !important;
   padding: 0 !important;
   display: flex !important;
@@ -44,12 +45,14 @@ body {
 
 @media (min-width: 900px) {
   .docx-custom-container .docx-wrapper,
-  .docx-wrapper {
+  .docx-wrapper,
+  .docx-exact-container {
     align-items: center !important;
   }
 }
 
 .docx-wrapper > section.docx,
+.docx-exact-view,
 section.docx {
   background: white !important;
   color: black !important;
