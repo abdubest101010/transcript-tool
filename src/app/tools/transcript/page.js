@@ -5,10 +5,10 @@ import Link from "next/link";
 import Navbar from "../../components/Navbar";
 import Footer from "../../components/Footer";
 
-export default function TranscriptToolPage() {
-  const [file, setFile] = useState(null);
-  const [photo, setPhoto] = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
+export default function TranscriptImageQrToolPage() {
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [customId, setCustomId] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -17,12 +17,11 @@ export default function TranscriptToolPage() {
   const [copiedId, setCopiedId] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const fileInputRef = useRef(null);
-  const photoInputRef = useRef(null);
 
   // Load history from localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("transcript_history");
+      const saved = localStorage.getItem("transcript_image_qr_history");
       if (saved) {
         setHistory(JSON.parse(saved));
       }
@@ -35,7 +34,7 @@ export default function TranscriptToolPage() {
     setHistory((prev) => {
       const updated = [item, ...prev.filter((h) => h.id !== item.id)].slice(0, 10);
       try {
-        localStorage.setItem("transcript_history", JSON.stringify(updated));
+        localStorage.setItem("transcript_image_qr_history", JSON.stringify(updated));
       } catch (e) {
         console.warn("Could not save history:", e);
       }
@@ -46,7 +45,7 @@ export default function TranscriptToolPage() {
   const clearHistory = () => {
     setHistory([]);
     try {
-      localStorage.removeItem("transcript_history");
+      localStorage.removeItem("transcript_image_qr_history");
     } catch (e) {}
   };
 
@@ -65,56 +64,47 @@ export default function TranscriptToolPage() {
     e.stopPropagation();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      validateAndSetFile(e.dataTransfer.files[0]);
+      validateAndSetImage(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
-      validateAndSetFile(e.target.files[0]);
+      validateAndSetImage(e.target.files[0]);
     }
   };
 
-  const validateAndSetFile = (selectedFile) => {
+  const validateAndSetImage = (selectedFile) => {
     setError(null);
     setResult(null);
-    if (!selectedFile.name.toLowerCase().endsWith(".docx")) {
-      setError("Please select a valid Word Document (.docx) file.");
-      setFile(null);
+    const validExts = [".jpg", ".jpeg", ".png", ".webp"];
+    const hasValidExt = validExts.some((ext) => selectedFile.name.toLowerCase().endsWith(ext));
+    if (!hasValidExt && !selectedFile.type.startsWith("image/")) {
+      setError("Please select a valid image file (.jpg, .jpeg, .png, .webp).");
+      setImageFile(null);
+      setImagePreview(null);
       return;
     }
-    setFile(selectedFile);
+    setImageFile(selectedFile);
+    setImagePreview(URL.createObjectURL(selectedFile));
   };
 
-  const handlePhotoChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedPhoto = e.target.files[0];
-      const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-      if (!validTypes.includes(selectedPhoto.type) && !selectedPhoto.name.match(/\.(jpg|jpeg|png|webp)$/i)) {
-        setError("Please upload an image file (.jpg, .jpeg, .png, .webp) for the student photo.");
-        return;
-      }
-      setPhoto(selectedPhoto);
-      const previewUrl = URL.createObjectURL(selectedPhoto);
-      setPhotoPreview(previewUrl);
+  const removeImage = () => {
+    setImageFile(null);
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+      setImagePreview(null);
     }
-  };
-
-  const removePhoto = () => {
-    setPhoto(null);
-    if (photoPreview) {
-      URL.revokeObjectURL(photoPreview);
-      setPhotoPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
     }
-    if (photoInputRef.current) {
-      photoInputRef.current.value = "";
-    }
+    setResult(null);
   };
 
   const handleProcess = async (e) => {
     e.preventDefault();
-    if (!file) {
-      setError("Please select a .docx file first.");
+    if (!imageFile) {
+      setError("Please select an image file first.");
       return;
     }
 
@@ -124,13 +114,12 @@ export default function TranscriptToolPage() {
 
     try {
       const formData = new FormData();
-      formData.append("file", file);
-      if (photo) {
-        formData.append("photo", photo);
+      formData.append("image", imageFile);
+      if (customId.trim()) {
+        formData.append("id", customId.trim());
       }
 
-      // Call API requesting JSON format with base64 for download
-      const response = await fetch("/api/process-transcript?format=json", {
+      const response = await fetch("/api/process-image-qr", {
         method: "POST",
         body: formData,
       });
@@ -138,53 +127,36 @@ export default function TranscriptToolPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to process transcript.");
+        throw new Error(data.error || "Failed to process transcript image.");
       }
 
-      let downloadUrl = "";
-      if (data.modifiedBlobUrl) {
-        downloadUrl = data.modifiedBlobUrl;
-      } else if (data.modifiedDocxBase64) {
-        const byteCharacters = atob(data.modifiedDocxBase64);
+      // Convert base64 to download blob
+      let downloadBlobUrl = "";
+      if (data.updatedImageBase64) {
+        const byteCharacters = atob(data.updatedImageBase64);
         const byteNumbers = new Array(byteCharacters.length);
         for (let i = 0; i < byteCharacters.length; i++) {
           byteNumbers[i] = byteCharacters.charCodeAt(i);
         }
         const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], {
-          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        });
-        downloadUrl = URL.createObjectURL(blob);
+        const blob = new Blob([byteArray], { type: "image/jpeg" });
+        downloadBlobUrl = URL.createObjectURL(blob);
       }
 
       const resultObj = {
         id: data.id,
         newQrUrl: data.newQrUrl,
-        originalQrData: data.originalQrData,
-        filename: data.filename || `modified-${file.name}`,
-        downloadUrl: downloadUrl,
-        modifiedBlobUrl: data.modifiedBlobUrl,
-        photoBlobUrl: data.photoBlobUrl,
+        filename: data.filename || `updated-${imageFile.name}`,
+        downloadUrl: downloadBlobUrl || `/ref/${data.id}.png`,
+        imageBase64: data.updatedImageBase64,
         timestamp: new Date().toISOString(),
       };
-
-      if (data.parsedData) {
-        try {
-          localStorage.setItem(`transcript_parsed_${data.id}`, JSON.stringify(data.parsedData));
-          sessionStorage.setItem(`transcript_parsed_${data.id}`, JSON.stringify(data.parsedData));
-          if (data.modifiedDocxBase64) {
-            localStorage.setItem(`transcript_doc_b64_${data.id}`, data.modifiedDocxBase64);
-          }
-        } catch (storageErr) {
-          console.warn("Could not save to localStorage:", storageErr);
-        }
-      }
 
       setResult(resultObj);
       saveToHistory(resultObj);
     } catch (err) {
       console.error(err);
-      setError(err.message || "An unexpected error occurred while processing the file.");
+      setError(err.message || "An error occurred while processing the image.");
     } finally {
       setLoading(false);
     }
@@ -210,24 +182,23 @@ export default function TranscriptToolPage() {
         <div className="text-center max-w-3xl mx-auto mb-10">
           <h1 className="text-3xl sm:text-5xl font-extrabold mb-4">
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-secondary-600">
-              Transcript QR & Photo
+              Transcript QR Code
             </span>{" "}
-            Tool
+            Updater & Redirector
           </h1>
           <p className="text-gray-400 text-sm sm:text-base leading-relaxed">
-            Upload your school transcript DOCX file. The tool replaces the embedded QR code with a
-            unique verification link (<code className="text-primary-400">/t/[id]</code>) and can
-            optionally insert the student photo into the designated photo box.
+            Upload your school transcript image. The tool cleanly removes overlapping QR codes, generates a fresh barcode routing directly to{" "}
+            <code className="text-primary-400 font-mono">https://www.gyaschol.com/ref/[id].png</code>, stores it, and renders the updated image.
           </p>
         </div>
 
         {/* Upload Container */}
         <div className="max-w-2xl mx-auto">
           <div className="bg-[#181818] border border-[#33353F] rounded-2xl p-6 sm:p-8 shadow-xl space-y-6">
-            {/* 1. DOCX Drag & Drop Area */}
+            {/* 1. Image Drag & Drop Area */}
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">
-                1. Upload Transcript DOCX <span className="text-red-400">*</span>
+                1. Upload Transcript Image <span className="text-red-400">*</span>
               </label>
               <div
                 onDragEnter={handleDrag}
@@ -244,7 +215,7 @@ export default function TranscriptToolPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -255,25 +226,33 @@ export default function TranscriptToolPage() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth="2"
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
                     />
                   </svg>
                 </div>
 
-                {file ? (
-                  <div>
-                    <p className="text-white font-medium text-base mb-1">{file.name}</p>
+                {imageFile ? (
+                  <div className="flex flex-col items-center">
+                    {imagePreview && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="w-48 h-32 object-contain rounded-lg border border-purple-500/30 mb-3 shadow"
+                      />
+                    )}
+                    <p className="text-white font-medium text-base mb-1">{imageFile.name}</p>
                     <p className="text-gray-400 text-xs">
-                      {(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to process
+                      {(imageFile.size / (1024 * 1024)).toFixed(2)} MB • Ready to process
                     </p>
                     <span className="inline-block mt-2 text-xs text-primary-400 underline">
-                      Click to change DOCX
+                      Click to change image
                     </span>
                   </div>
                 ) : (
                   <div>
                     <p className="text-white font-medium text-sm mb-1">
-                      Drag and drop your <span className="text-primary-400 font-semibold">.docx</span> file here
+                      Drag and drop your transcript image (<span className="text-primary-400 font-semibold">.jpg, .png</span>) here
                     </p>
                     <p className="text-gray-500 text-xs">or click to browse your computer</p>
                   </div>
@@ -281,74 +260,18 @@ export default function TranscriptToolPage() {
               </div>
             </div>
 
-            {/* 2. Optional Student Photo Input */}
-            <div className="pt-2 border-t border-gray-800">
-              <label className="block text-sm font-semibold text-gray-300 mb-2">
-                2. Student Photo <span className="text-gray-500 font-normal">(optional)</span>
+            {/* 2. Optional Custom Reference ID */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-300 mb-1">
+                2. Custom Reference ID <span className="text-gray-500 font-normal">(optional, e.g. 1184229)</span>
               </label>
-
               <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/jpeg,image/jpg,image/png,image/webp"
-                onChange={handlePhotoChange}
-                className="hidden"
+                type="text"
+                placeholder="Leave blank for automatic 7-digit ID"
+                value={customId}
+                onChange={(e) => setCustomId(e.target.value)}
+                className="w-full bg-[#121212] border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-primary-500 transition"
               />
-
-              {photoPreview ? (
-                <div className="flex items-center gap-4 p-4 rounded-xl bg-[#121212]/70 border border-gray-800">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photoPreview}
-                    alt="Student Preview"
-                    className="w-16 h-20 object-cover rounded-lg border border-purple-500/40 shadow"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{photo.name}</p>
-                    <p className="text-xs text-green-400 mt-0.5">Photo ready to insert into square</p>
-                    <div className="flex gap-3 mt-2">
-                      <button
-                        type="button"
-                        onClick={() => photoInputRef.current?.click()}
-                        className="text-xs text-primary-400 hover:text-primary-300 underline"
-                      >
-                        Change Photo
-                      </button>
-                      <button
-                        type="button"
-                        onClick={removePhoto}
-                        className="text-xs text-red-400 hover:text-red-300 underline"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  onClick={() => photoInputRef.current?.click()}
-                  className="p-4 border border-dashed border-gray-700 hover:border-gray-500 rounded-xl bg-[#121212]/30 flex items-center gap-3 cursor-pointer transition"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-pink-950/30 border border-pink-700/30 flex items-center justify-center text-pink-400 flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-300">
-                      Upload student photo <span className="text-xs text-gray-500 font-normal">(.jpg, .png, .webp)</span>
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Will be placed inside the right-hand square box
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Error Message */}
@@ -368,9 +291,9 @@ export default function TranscriptToolPage() {
             {/* Submit Button */}
             <button
               onClick={handleProcess}
-              disabled={!file || loading}
+              disabled={!imageFile || loading}
               className={`w-full py-3.5 px-6 rounded-xl font-semibold text-white transition flex items-center justify-center gap-2 ${
-                !file || loading
+                !imageFile || loading
                   ? "bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700"
                   : "bg-gradient-to-r from-primary-500 to-secondary-500 hover:opacity-90 shadow-lg shadow-purple-500/20"
               }`}
@@ -397,11 +320,11 @@ export default function TranscriptToolPage() {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     ></path>
                   </svg>
-                  <span>Processing & Assembling Transcript...</span>
+                  <span>Updating QR & Routing to Domain...</span>
                 </>
               ) : (
                 <>
-                  <span>Process Transcript & Update QR</span>
+                  <span>Process Image & Route to gyaschol.com</span>
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
@@ -433,17 +356,30 @@ export default function TranscriptToolPage() {
                   </svg>
                   <div>
                     <h3 className="font-semibold text-green-300 text-sm">
-                      Success! Transcript Updated
+                      Success! QR Code Updated & Stored
                     </h3>
                     <p className="text-green-400/80 text-xs mt-0.5">
-                      QR code replaced {photo ? "and photo inserted " : ""}successfully.
+                      The QR code was cleanly replaced and now routes to your website.
                     </p>
                   </div>
                 </div>
 
+                {/* Updated Image Preview */}
+                {result.downloadUrl && (
+                  <div className="p-3 bg-[#121212] rounded-xl border border-gray-800 text-center">
+                    <p className="text-xs text-gray-400 mb-2">Updated Image Preview:</p>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={result.downloadUrl}
+                      alt="Updated Transcript"
+                      className="max-h-64 mx-auto rounded-lg border border-gray-700 shadow"
+                    />
+                  </div>
+                )}
+
                 <div className="space-y-2 text-xs sm:text-sm">
                   <div className="bg-[#121212] p-3 rounded-lg border border-gray-800 flex items-center justify-between">
-                    <span className="text-gray-400">Generated ID:</span>
+                    <span className="text-gray-400">Reference ID:</span>
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-primary-400 font-semibold">{result.id}</span>
                       <button
@@ -456,15 +392,16 @@ export default function TranscriptToolPage() {
                   </div>
 
                   <div className="bg-[#121212] p-3 rounded-lg border border-gray-800 flex flex-col gap-1.5">
-                    <span className="text-gray-400">New Public QR Destination:</span>
+                    <span className="text-gray-400">Live Website Image Link:</span>
                     <div className="flex items-center justify-between gap-2">
-                      <Link
-                        href={`/t/${result.id}`}
+                      <a
+                        href={result.newQrUrl}
                         target="_blank"
+                        rel="noreferrer"
                         className="font-mono text-pink-400 hover:underline truncate text-xs"
                       >
                         {result.newQrUrl}
-                      </Link>
+                      </a>
                       <button
                         onClick={() => copyToClipboard(result.newQrUrl, "url")}
                         className="text-gray-400 hover:text-white px-2 py-0.5 bg-gray-800 rounded text-xs flex-shrink-0"
@@ -483,16 +420,17 @@ export default function TranscriptToolPage() {
                       download={result.filename}
                       className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-primary-500 to-secondary-500 text-center font-semibold text-white text-sm shadow-md hover:opacity-90 transition"
                     >
-                      Download Modified DOCX (.docx)
+                      Download Updated Image
                     </a>
                   )}
-                  <Link
-                    href={`/t/${result.id}`}
+                  <a
+                    href={result.newQrUrl}
                     target="_blank"
+                    rel="noreferrer"
                     className="flex-1 py-3 px-4 rounded-xl bg-[#222430] hover:bg-[#2b2e3d] text-center font-medium text-gray-200 text-sm border border-[#3b3e4f] transition"
                   >
-                    View Live Page ↗
-                  </Link>
+                    Open Live Image Route ↗
+                  </a>
                 </div>
               </div>
             )}
@@ -502,7 +440,7 @@ export default function TranscriptToolPage() {
           {history.length > 0 && (
             <div className="mt-10 bg-[#181818] border border-[#33353F] rounded-2xl p-6 shadow-xl">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-white">Recent Processed Documents</h2>
+                <h2 className="text-lg font-bold text-white">Recent Processed Images</h2>
                 <button
                   onClick={clearHistory}
                   className="text-xs text-gray-500 hover:text-red-400 transition"
@@ -516,19 +454,21 @@ export default function TranscriptToolPage() {
                   <div key={item.id} className="py-3 flex items-center justify-between gap-4">
                     <div className="truncate">
                       <p className="text-sm font-medium text-gray-200 truncate">
-                        {item.filename || `Transcript #${item.id}`}
+                        {item.filename || `Image Ref #${item.id}`}
                       </p>
                       <p className="text-xs text-gray-500 font-mono">
                         ID: {item.id} • {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : ""}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <Link
-                        href={`/t/${item.id}`}
+                      <a
+                        href={item.newQrUrl}
+                        target="_blank"
+                        rel="noreferrer"
                         className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 text-primary-400 hover:bg-gray-700 font-medium transition"
                       >
-                        View Page
-                      </Link>
+                        View Route
+                      </a>
                       {item.downloadUrl && (
                         <a
                           href={item.downloadUrl}
