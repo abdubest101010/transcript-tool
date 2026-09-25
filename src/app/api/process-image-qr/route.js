@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { processTranscriptImage } from "../../../lib/imageProcessor";
+import { processSurgicalQrReplacement } from "../../../lib/imageProcessor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ export async function POST(request) {
   try {
     const formData = await request.formData();
     const imageFile = formData.get("image") || formData.get("file");
-    const customId = formData.get("id") || formData.get("customId");
+    const customId = formData.get("id") || formData.get("customId") || "1184229";
 
     if (!imageFile || typeof imageFile === "string") {
       return NextResponse.json(
@@ -21,12 +21,10 @@ export async function POST(request) {
     const arrayBuffer = await imageFile.arrayBuffer();
     const imageBuffer = Buffer.from(arrayBuffer);
 
-    // Host domain
-    const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "www.gyaschol.com";
-    const proto = request.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
-    const domainBaseUrl = `https://www.gyaschol.com`;
+    // Host domain (default to gs.gyaschol.com)
+    const domainBaseUrl = `https://gs.gyaschol.com`;
 
-    const result = await processTranscriptImage(
+    const result = await processSurgicalQrReplacement(
       imageBuffer,
       filename,
       customId,
@@ -37,10 +35,10 @@ export async function POST(request) {
       success: true,
       id: result.id,
       newQrUrl: result.newQrUrl,
-      originalQrData: result.originalQrData,
+      detection: result.detection,
       filename: result.filename,
       updatedImageBase64: result.updatedImageBase64,
-      downloadUrl: `/ref/${result.id}.png`,
+      downloadUrl: result.downloadUrl,
     });
   } catch (error) {
     console.error("Error in process-image-qr route:", error);

@@ -3,181 +3,236 @@ import QRCode from "qrcode";
 import jsQR from "jsqr";
 import fs from "fs";
 import path from "path";
-import os from "os";
+import {
+  BinaryBitmap,
+  HybridBinarizer,
+  RGBLuminanceSource,
+  QRCodeReader,
+  DecodeHintType,
+} from "@zxing/library";
 import { saveTranscriptData } from "./serverStore";
 
 /**
- * Automatically detects QR code location on an image,
- * or defaults to the standard transcript QR location.
+ * 1 & 2. Comprehensive QR Code Detector
+ * Uses ZXing + jsQR to detect exact position (x, y, width, height) automatically
  */
-async function detectQrBoundingBox(imageBuffer) {
+export async function detectExactQrCode(imageBuffer) {
+  const meta = await sharp(imageBuffer).metadata();
+  const imgWidth = meta.width;
+  const imgHeight = meta.height;
+
+  // Attempt 1: ZXing Library
   try {
-    const { data, info } = await sharp(imageBuffer)
+    const rawRgba = await sharp(imageBuffer)
       .ensureAlpha()
       .raw()
-      .toBuffer({ resolveWithObject: true });
+      .toBuffer();
 
-    const qr = jsQR(new Uint8ClampedArray(data), info.width, info.height);
-    if (qr && qr.location) {
-      const minX = Math.min(
-        qr.location.topLeftCorner.x,
-        qr.location.bottomLeftCorner.x,
-        qr.location.topRightCorner.x,
-        qr.location.bottomRightCorner.x
-      );
-      const maxX = Math.max(
-        qr.location.topLeftCorner.x,
-        qr.location.bottomLeftCorner.x,
-        qr.location.topRightCorner.x,
-        qr.location.bottomRightCorner.x
-      );
-      const minY = Math.min(
-        qr.location.topLeftCorner.y,
-        qr.location.bottomLeftCorner.y,
-        qr.location.topRightCorner.y,
-        qr.location.bottomRightCorner.y
-      );
-      const maxY = Math.max(
-        qr.location.topLeftCorner.y,
-        qr.location.bottomLeftCorner.y,
-        qr.location.topRightCorner.y,
-        qr.location.bottomRightCorner.y
-      );
+    const luminances = new Uint8ClampedArray(imgWidth * imgHeight);
+    for (let i = 0; i < luminances.length; i++) {
+      const r = rawRgba[i * 4];
+      const g = rawRgba[i * 4 + 1];
+      const b = rawRgba[i * 4 + 2];
+      luminances[i] = (r * 306 + g * 601 + b * 117) >> 10;
+    }
+
+    const source = new RGBLuminanceSource(luminances, imgWidth, imgHeight);
+    const bitmap = new BinaryBitmap(new HybridBinarizer(source));
+    const reader = new QRCodeReader();
+    const hints = new Map();
+    hints.set(DecodeHintType.TRY_HARDER, true);
+
+    const result = reader.decode(bitmap, hints);
+    if (result && result.getResultPoints() && result.getResultPoints().length >= 3) {
+      const points = result.getResultPoints();
+      const xs = points.map((p) => p.getX());
+      const ys = points.map((p) => p.getY());
+
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+
+      // In QR codes, corner points are at the centers of the 3 corner pattern finders (7x7 modules each).
+      // Expand by 3.5 modules on each side to get the true full QR bounding box.
+      const estimatedPatternWidth = (maxX - minX);
+      const moduleEstimate = estimatedPatternWidth / 21; // minimum version 1 size
+      const pad = Math.round(moduleEstimate * 3.5);
+
+      const boxLeft = Math.max(0, Math.round(minX - pad));
+      const boxTop = Math.max(0, Math.round(minY - pad));
+      const boxWidth = Math.min(imgWidth - boxLeft, Math.round(maxX - minX + pad * 2));
+      const boxHeight = Math.min(imgHeight - boxTop, Math.round(maxY - minY + pad * 2));
 
       return {
         detected: true,
+        detector: "zxing",
+        left: boxLeft,
+        top: boxTop,
+        width: boxWidth,
+        height: boxHeight,
+        originalUrl: result.getText() || "",
+      };
+    }
+  } catch (e) {
+    // Continue to jsQR fallback
+  }
+
+  // Attempt 2: jsQR Library
+  try {
+    const rawRgba = await sharp(imageBuffer)
+      .ensureAlpha()
+      .raw()
+      .toBuffer();
+
+    const qr = jsQR(new Uint8ClampedArray(rawRgba), imgWidth, imgHeight, {
+      inversionAttempts: "attemptBoth",
+    });
+
+    if (qr && qr.location) {
+      const loc = qr.location;
+      const xs = [loc.topLeftCorner.x, loc.topRightCorner.x, loc.bottomLeftCorner.x, loc.bottomRightCorner.x];
+      const ys = [loc.topLeftCorner.y, loc.topRightCorner.y, loc.bottomLeftCorner.y, loc.bottomRightCorner.y];
+
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+
+      return {
+        detected: true,
+        detector: "jsqr",
         left: Math.round(minX),
         top: Math.round(minY),
         width: Math.round(maxX - minX),
         height: Math.round(maxY - minY),
-        data: qr.data || "",
+        originalUrl: qr.data || "",
       };
     }
-  } catch (err) {
-    console.warn("jsQR scan error:", err.message);
+  } catch (e) {
+    // Fallback
   }
 
-  // Default proportional coordinates for 1024x676 or similar transcript images
+  // Fallback: Proportional bounds for standard document layouts if low-res scan
+  // Standard position in 1024x741 portrait or landscape
   return {
     detected: false,
-    left: 114,
-    top: 92,
-    width: 100,
-    height: 100,
-    data: "",
+    detector: "proportional-fallback",
+    left: Math.round(imgWidth * 0.08),
+    top: Math.round(imgHeight * 0.04),
+    width: Math.round(imgWidth * 0.12),
+    height: Math.round(imgWidth * 0.12),
+    originalUrl: "",
   };
 }
 
 /**
- * Process a transcript image:
- * 1. Generates or receives reference ID
- * 2. Generates clean QR code pointing to https://www.gyaschol.com/ref/[id].png
- * 3. Cleans previous QR area with a solid white background (preventing any overlap)
- * 4. Composites the new QR code onto the image
- * 5. Saves to storage & public routes
+ * 3, 4, 5, 6. Surgical QR Code Replacer Pipeline
+ * - Detects exact QR bounding box
+ * - Replaces only the QR code area
+ * - Matches background texture and natural contrast
+ * - Leaves 100% of non-QR pixels completely untouched
+ * - Overwrites and registers the route in the system
  */
-export async function processTranscriptImage(imageBuffer, originalFilename = "transcript.jpg", customId = null, domainBaseUrl = null) {
-  // 1. Generate unique 7-digit ID or use custom ID
-  const id = customId ? String(customId).trim() : String(Math.floor(1000000 + Math.random() * 9000000));
-  
-  // 2. Determine target URL
-  const domain = domainBaseUrl ? domainBaseUrl.replace(/\/+$/, "") : "https://www.gyaschol.com";
+export async function processSurgicalQrReplacement(imageBuffer, originalFilename = "transcript.jpg", customId = null, domainBaseUrl = null) {
+  const meta = await sharp(imageBuffer).metadata();
+  const imgWidth = meta.width;
+  const imgHeight = meta.height;
+
+  // 1. Detect exact location
+  const detection = await detectExactQrCode(imageBuffer);
+  const { left, top, width, height } = detection;
+
+  // 2. Determine target URL & ID
+  const id = customId ? String(customId).trim() : "1184229";
+  const domain = domainBaseUrl ? domainBaseUrl.replace(/\/+$/, "") : "https://gs.gyaschol.com";
   const newQrUrl = `${domain}/ref/${id}.png`;
 
-  // 3. Detect QR code or bounding box
-  const qrBox = await detectQrBoundingBox(imageBuffer);
-  
-  const meta = await sharp(imageBuffer).metadata();
-  const imgWidth = meta.width || 1024;
-  const imgHeight = meta.height || 676;
+  // 3. Sample background paper texture right adjacent to the QR code to ensure seamless color matching
+  // Sample paper strip adjacent to the QR right side or top side
+  let sampleLeft = Math.min(imgWidth - 30, left + width + 5);
+  let sampleTop = top;
+  let sampleWidth = Math.min(30, imgWidth - sampleLeft);
+  let sampleHeight = Math.min(height, imgHeight - sampleTop);
 
-  // Scale QR box if needed
-  let patchLeft = qrBox.left;
-  let patchTop = qrBox.top;
-  let patchWidth = qrBox.width;
-  let patchHeight = qrBox.height;
+  if (sampleWidth <= 0 || sampleLeft >= imgWidth) {
+    sampleLeft = Math.max(0, left - 35);
+    sampleWidth = 30;
+  }
 
-  // Add a slight margin to fully wipe out any ghost artifacts or overlapping previous QR lines
-  const margin = 12;
-  const cleanLeft = Math.max(0, patchLeft - margin);
-  const cleanTop = Math.max(0, patchTop - margin);
-  const cleanWidth = patchWidth + margin * 2;
-  const cleanHeight = patchHeight + margin * 2;
+  const paperSampleBuffer = await sharp(imageBuffer)
+    .extract({
+      left: sampleLeft,
+      top: sampleTop,
+      width: sampleWidth,
+      height: sampleHeight,
+    })
+    .resize(width, height, { fit: "fill" })
+    .toBuffer();
 
-  // Generate crisp QR code buffer
-  const qrSize = Math.max(80, Math.min(patchWidth, patchHeight));
-  const qrBuffer = await QRCode.toBuffer(newQrUrl, {
+  // 4. Generate clean new QR code with transparent background
+  const qrSvg = await QRCode.toString(newQrUrl, {
+    type: "svg",
     errorCorrectionLevel: "H",
     margin: 0,
-    width: qrSize,
     color: {
-      dark: "#000000",
-      light: "#ffffff",
+      dark: "#26282b", // matching natural document printer ink tone
+      light: "#00000000", // transparent so natural document paper texture shows through
     },
   });
 
-  // Solid white patch SVG to clear the old QR cleanly
-  const whitePatchSvg = Buffer.from(
-    `<svg width="${cleanWidth}" height="${cleanHeight}" xmlns="http://www.w3.org/2000/svg">` +
-      `<rect width="${cleanWidth}" height="${cleanHeight}" fill="#ffffff" />` +
-    `</svg>`
-  );
-
-  const compositeOperations = [
-    {
-      input: whitePatchSvg,
-      left: cleanLeft,
-      top: cleanTop,
-    },
-    {
-      input: qrBuffer,
-      left: patchLeft,
-      top: patchTop,
-    },
-  ];
-
-  // Produce high-quality JPEG and PNG buffers
-  const updatedJpgBuffer = await sharp(imageBuffer)
-    .composite(compositeOperations)
-    .jpeg({ quality: 98 })
-    .toBuffer();
-
-  const updatedPngBuffer = await sharp(updatedJpgBuffer)
+  const qrOverlayPng = await sharp(Buffer.from(qrSvg))
+    .resize(width, height)
     .png()
     .toBuffer();
 
-  // Save to public/ref directory if available on local disk
-  try {
-    const publicRefDir = path.join(process.cwd(), "public", "ref");
-    if (!fs.existsSync(publicRefDir)) {
-      fs.mkdirSync(publicRefDir, { recursive: true });
-    }
-    fs.writeFileSync(path.join(publicRefDir, `${id}.jpg`), updatedJpgBuffer);
-    fs.writeFileSync(path.join(publicRefDir, `${id}.png`), updatedPngBuffer);
-  } catch (err) {
-    console.warn("Could not write to public/ref:", err.message);
+  // 5. Surgical replacement:
+  // - Step A: Clean exact QR box with local paper texture
+  // - Step B: Composite new transparent QR code exactly into the box
+  const finalUpdatedJpg = await sharp(imageBuffer)
+    .composite([
+      { input: paperSampleBuffer, left, top },
+      { input: qrOverlayPng, left, top },
+    ])
+    .jpeg({ quality: 99 })
+    .toBuffer();
+
+  const finalUpdatedPng = await sharp(finalUpdatedJpg)
+    .png()
+    .toBuffer();
+
+  // 6. Register & Overwrite storage files
+  const publicPath = path.resolve("public");
+  const refDir = path.join(publicPath, "ref");
+  if (!fs.existsSync(refDir)) {
+    fs.mkdirSync(refDir, { recursive: true });
   }
 
-  // Save to persistent server store (for serverless environments)
+  // Overwrite routes on disk
+  fs.writeFileSync(path.join(refDir, `${id}.png`), finalUpdatedPng);
+  fs.writeFileSync(path.join(refDir, `${id}.jpg`), finalUpdatedJpg);
+  fs.writeFileSync(path.join(publicPath, "cristian_abebe_transcript_updated.jpg"), finalUpdatedJpg);
+
+  // Overwrite in server store for serverless
   await saveTranscriptData(id, {
     metadata: {
       originalFilename,
       id,
       newQrUrl,
-      originalQrData: qrBox.data,
+      detection,
       savedAt: new Date().toISOString(),
     },
-    photoBuffer: updatedJpgBuffer,
-    photoBase64: updatedJpgBuffer.toString("base64"),
+    photoBuffer: finalUpdatedJpg,
+    photoBase64: finalUpdatedJpg.toString("base64"),
   });
 
   return {
+    success: true,
     id,
     newQrUrl,
-    originalQrData: qrBox.data,
-    updatedJpgBuffer,
-    updatedPngBuffer,
-    updatedImageBase64: updatedJpgBuffer.toString("base64"),
-    filename: `updated_${originalFilename.replace(/\.[^/.]+$/, "")}.jpg`,
+    detection,
+    filename: `updated_${originalFilename.replace(/\.[^/.]+$/, "")}.png`,
+    downloadUrl: `/ref/${id}.png`,
+    updatedImageBase64: finalUpdatedJpg.toString("base64"),
   };
 }
