@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { NextResponse } from "next/server";
 import { getTranscriptData } from "../../../lib/serverStore";
 
@@ -12,13 +13,22 @@ export async function GET(request, { params }) {
     // Clean extension (.png, .jpg, etc.)
     const id = rawSlug.replace(/\.(png|jpe?g|webp)$/i, "").trim();
 
-    // 1. Check local public/generated reference files first
-    const publicRefFile = path.join(process.cwd(), "public", "ref", `${id}.jpg`);
-    const publicRefFilePng = path.join(process.cwd(), "public", "ref", `${id}.png`);
-    const defaultImage = path.join(process.cwd(), "public", "cristian_abebe_transcript_updated.jpg");
+    // 1. Check serverless /tmp image cache first
+    const tmpJpg = path.join(os.tmpdir(), "public_ref_images", `${id}.jpg`);
+    const tmpPng = path.join(os.tmpdir(), "public_ref_images", `${id}.png`);
 
-    if (fs.existsSync(publicRefFile)) {
-      const buf = fs.readFileSync(publicRefFile);
+    if (fs.existsSync(tmpPng)) {
+      const buf = fs.readFileSync(tmpPng);
+      return new Response(buf, {
+        headers: {
+          "Content-Type": "image/png",
+          "Cache-Control": "public, max-age=31536000, immutable",
+        },
+      });
+    }
+
+    if (fs.existsSync(tmpJpg)) {
+      const buf = fs.readFileSync(tmpJpg);
       return new Response(buf, {
         headers: {
           "Content-Type": "image/jpeg",
@@ -26,6 +36,11 @@ export async function GET(request, { params }) {
         },
       });
     }
+
+    // 2. Check local public/generated reference files (bundled with repo)
+    const publicRefFile = path.join(process.cwd(), "public", "ref", `${id}.jpg`);
+    const publicRefFilePng = path.join(process.cwd(), "public", "ref", `${id}.png`);
+    const defaultImage = path.join(process.cwd(), "public", "cristian_abebe_transcript_updated.jpg");
 
     if (fs.existsSync(publicRefFilePng)) {
       const buf = fs.readFileSync(publicRefFilePng);
@@ -37,10 +52,8 @@ export async function GET(request, { params }) {
       });
     }
 
-    // 2. Check server store
-    const stored = await getTranscriptData(id);
-    if (stored && stored.photoBase64) {
-      const buf = Buffer.from(stored.photoBase64, "base64");
+    if (fs.existsSync(publicRefFile)) {
+      const buf = fs.readFileSync(publicRefFile);
       return new Response(buf, {
         headers: {
           "Content-Type": "image/jpeg",
@@ -49,7 +62,19 @@ export async function GET(request, { params }) {
       });
     }
 
-    // 3. Fallback to default Cristian Abebe updated transcript image if exists
+    // 3. Check persistent server store
+    const stored = await getTranscriptData(id);
+    if (stored && stored.photoBase64) {
+      const buf = Buffer.from(stored.photoBase64, "base64");
+      return new Response(buf, {
+        headers: {
+          "Content-Type": "image/png",
+          "Cache-Control": "public, max-age=31536000, immutable",
+        },
+      });
+    }
+
+    // 4. Fallback to default Cristian Abebe updated transcript image if exists
     if (fs.existsSync(defaultImage)) {
       const buf = fs.readFileSync(defaultImage);
       return new Response(buf, {

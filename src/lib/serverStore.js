@@ -1,8 +1,8 @@
-﻿import fs from "fs";
+import fs from "fs";
 import path from "path";
 import os from "os";
 
-// Global in-memory store for fast access across route invocations
+// Global in-memory store for fast access across route invocations in serverless
 if (!globalThis._transcriptStore) {
   globalThis._transcriptStore = new Map();
 }
@@ -10,6 +10,7 @@ if (!globalThis._transcriptStore) {
 // Storage directories (both project-local and OS temp dir for cross-environment resilience)
 const LOCAL_STORAGE_DIR = path.join(process.cwd(), ".transcripts_data");
 const TMP_STORAGE_DIR = path.join(os.tmpdir(), "transcripts_data");
+const TMP_REF_DIR = path.join(os.tmpdir(), "public_ref_images");
 
 function ensureDirs() {
   try {
@@ -21,6 +22,12 @@ function ensureDirs() {
   try {
     if (!fs.existsSync(TMP_STORAGE_DIR)) {
       fs.mkdirSync(TMP_STORAGE_DIR, { recursive: true });
+    }
+  } catch (e) {}
+
+  try {
+    if (!fs.existsSync(TMP_REF_DIR)) {
+      fs.mkdirSync(TMP_REF_DIR, { recursive: true });
     }
   } catch (e) {}
 }
@@ -41,7 +48,22 @@ export async function saveTranscriptData(id, data) {
   // 1. Memory cache
   globalThis._transcriptStore.set(id, entry);
 
-  // 2. Local disk persistence
+  // 2. Also write raw image buffer to /tmp for instant file serving in serverless
+  if (data.photoBuffer) {
+    try {
+      const rawBuf = Buffer.isBuffer(data.photoBuffer) ? data.photoBuffer : Buffer.from(data.photoBuffer);
+      fs.writeFileSync(path.join(TMP_REF_DIR, `${id}.jpg`), rawBuf);
+      fs.writeFileSync(path.join(TMP_REF_DIR, `${id}.png`), rawBuf);
+    } catch (e) {}
+  } else if (data.photoBase64) {
+    try {
+      const rawBuf = Buffer.from(data.photoBase64, "base64");
+      fs.writeFileSync(path.join(TMP_REF_DIR, `${id}.jpg`), rawBuf);
+      fs.writeFileSync(path.join(TMP_REF_DIR, `${id}.png`), rawBuf);
+    } catch (e) {}
+  }
+
+  // 3. Local disk persistence
   const jsonStr = JSON.stringify(entry);
 
   try {

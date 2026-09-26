@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import jsQR from "jsqr";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import {
   BinaryBitmap,
   HybridBinarizer,
@@ -53,10 +54,8 @@ export async function detectExactQrCode(imageBuffer) {
       const minY = Math.min(...ys);
       const maxY = Math.max(...ys);
 
-      // In QR codes, corner points are at the centers of the 3 corner pattern finders (7x7 modules each).
-      // Expand by 3.5 modules on each side to get the true full QR bounding box.
       const estimatedPatternWidth = (maxX - minX);
-      const moduleEstimate = estimatedPatternWidth / 21; // minimum version 1 size
+      const moduleEstimate = estimatedPatternWidth / 21;
       const pad = Math.round(moduleEstimate * 3.5);
 
       const boxLeft = Math.max(0, Math.round(minX - pad));
@@ -75,7 +74,7 @@ export async function detectExactQrCode(imageBuffer) {
       };
     }
   } catch (e) {
-    // Continue to jsQR fallback
+    // Fallback to jsQR
   }
 
   // Attempt 2: jsQR Library
@@ -113,13 +112,12 @@ export async function detectExactQrCode(imageBuffer) {
     // Fallback
   }
 
-  // Fallback: Proportional bounds for standard document layouts if low-res scan
-  // Standard position in 1024x741 portrait or landscape
+  // Fallback: Default bounding box
   return {
     detected: false,
     detector: "proportional-fallback",
-    left: Math.round(imgWidth * 0.08),
-    top: Math.round(imgHeight * 0.04),
+    left: Math.round(imgWidth * 0.05),
+    top: Math.round(imgHeight * 0.81),
     width: Math.round(imgWidth * 0.12),
     height: Math.round(imgWidth * 0.12),
     originalUrl: "",
@@ -128,11 +126,6 @@ export async function detectExactQrCode(imageBuffer) {
 
 /**
  * 3, 4, 5, 6. Surgical QR Code Replacer Pipeline
- * - Detects exact QR bounding box
- * - Replaces only the QR code area
- * - Matches background texture and natural contrast
- * - Leaves 100% of non-QR pixels completely untouched
- * - Overwrites and registers the route in the system
  */
 export async function processSurgicalQrReplacement(imageBuffer, originalFilename = "transcript.jpg", customId = null, domainBaseUrl = null) {
   const meta = await sharp(imageBuffer).metadata();
@@ -148,8 +141,7 @@ export async function processSurgicalQrReplacement(imageBuffer, originalFilename
   const domain = domainBaseUrl ? domainBaseUrl.replace(/\/+$/, "") : "https://gs.gyaschol.com";
   const newQrUrl = `${domain}/ref/${id}.png`;
 
-  // 3. Sample background paper texture right adjacent to the QR code to ensure seamless color matching
-  // Sample paper strip adjacent to the QR right side or top side
+  // 3. Sample background paper texture right adjacent to the QR code
   let sampleLeft = Math.min(imgWidth - 30, left + width + 5);
   let sampleTop = top;
   let sampleWidth = Math.min(30, imgWidth - sampleLeft);
@@ -176,8 +168,8 @@ export async function processSurgicalQrReplacement(imageBuffer, originalFilename
     errorCorrectionLevel: "H",
     margin: 0,
     color: {
-      dark: "#26282b", // matching natural document printer ink tone
-      light: "#00000000", // transparent so natural document paper texture shows through
+      dark: "#26282b",
+      light: "#00000000",
     },
   });
 
@@ -187,8 +179,6 @@ export async function processSurgicalQrReplacement(imageBuffer, originalFilename
     .toBuffer();
 
   // 5. Surgical replacement:
-  // - Step A: Clean exact QR box with local paper texture
-  // - Step B: Composite new transparent QR code exactly into the box
   const finalUpdatedJpg = await sharp(imageBuffer)
     .composite([
       { input: paperSampleBuffer, left, top },
@@ -201,19 +191,22 @@ export async function processSurgicalQrReplacement(imageBuffer, originalFilename
     .png()
     .toBuffer();
 
-  // 6. Register & Overwrite storage files
-  const publicPath = path.resolve("public");
-  const refDir = path.join(publicPath, "ref");
-  if (!fs.existsSync(refDir)) {
-    fs.mkdirSync(refDir, { recursive: true });
+  // 6. Safe write to public/ref if in development / writable filesystem
+  try {
+    const publicPath = path.resolve("public");
+    const refDir = path.join(publicPath, "ref");
+    if (!fs.existsSync(refDir)) {
+      fs.mkdirSync(refDir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(refDir, `${id}.png`), finalUpdatedPng);
+    fs.writeFileSync(path.join(refDir, `${id}.jpg`), finalUpdatedJpg);
+    fs.writeFileSync(path.join(publicPath, "cristian_abebe_transcript_updated.jpg"), finalUpdatedJpg);
+  } catch (fsErr) {
+    // Gracefully handle read-only filesystem (EROFS) on Vercel Serverless
+    console.warn("Public directory write skipped (serverless environment):", fsErr.message);
   }
 
-  // Overwrite routes on disk
-  fs.writeFileSync(path.join(refDir, `${id}.png`), finalUpdatedPng);
-  fs.writeFileSync(path.join(refDir, `${id}.jpg`), finalUpdatedJpg);
-  fs.writeFileSync(path.join(publicPath, "cristian_abebe_transcript_updated.jpg"), finalUpdatedJpg);
-
-  // Overwrite in server store for serverless
+  // 7. Persist to serverStore (in-memory + /tmp directory)
   await saveTranscriptData(id, {
     metadata: {
       originalFilename,

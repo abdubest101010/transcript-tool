@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { getTranscriptData, saveTranscriptData } from "../../../lib/serverStore";
 
 export const runtime = "nodejs";
@@ -9,15 +10,11 @@ export const dynamic = "force-dynamic";
 function sanitizeRoute(rawRoute) {
   if (!rawRoute) return "";
   let clean = rawRoute.trim();
-  // If user pasted a full URL (e.g., https://gs.gyaschol.com/ref/1184229.png), extract path/slug
   clean = clean.replace(/^https?:\/\/[^\/]+/i, "");
-  // Remove leading/trailing slashes
   clean = clean.replace(/^\/+|\/+$/g, "");
-  // If user included 'ref/', strip it to get the slug ID
   if (clean.toLowerCase().startsWith("ref/")) {
     clean = clean.substring(4);
   }
-  // Remove file extension (.png, .jpg, etc.) for internal slug key
   clean = clean.replace(/\.(png|jpe?g|webp)$/i, "");
   return clean;
 }
@@ -43,9 +40,11 @@ export async function POST(request) {
     let exists = false;
     let existingInfo = null;
 
-    if (fs.existsSync(publicRefJpg) || fs.existsSync(publicRefPng)) {
-      exists = true;
-    }
+    try {
+      if (fs.existsSync(publicRefJpg) || fs.existsSync(publicRefPng)) {
+        exists = true;
+      }
+    } catch (e) {}
 
     const storedData = await getTranscriptData(slugId);
     if (storedData) {
@@ -90,17 +89,19 @@ export async function POST(request) {
     const arrayBuffer = await imageFile.arrayBuffer();
     const imageBuffer = Buffer.from(arrayBuffer);
 
-    // Save to public/ref directory
-    const refDir = path.join(process.cwd(), "public", "ref");
-    if (!fs.existsSync(refDir)) {
-      fs.mkdirSync(refDir, { recursive: true });
+    // Safe write to public/ref directory if writable
+    try {
+      const refDir = path.join(process.cwd(), "public", "ref");
+      if (!fs.existsSync(refDir)) {
+        fs.mkdirSync(refDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(refDir, `${slugId}.png`), imageBuffer);
+      fs.writeFileSync(path.join(refDir, `${slugId}.jpg`), imageBuffer);
+    } catch (fsErr) {
+      console.warn("Public directory write skipped (serverless environment):", fsErr.message);
     }
 
-    // Save both PNG and JPG endpoints for seamless access
-    fs.writeFileSync(path.join(refDir, `${slugId}.png`), imageBuffer);
-    fs.writeFileSync(path.join(refDir, `${slugId}.jpg`), imageBuffer);
-
-    // Also persist to server store
+    // Always persist to serverStore (/tmp + in-memory)
     await saveTranscriptData(slugId, {
       metadata: {
         originalFilename: filename,
