@@ -15,14 +15,24 @@ export default function Navbar() {
             QR
           </div>
           <span className="font-extrabold text-xl text-white tracking-tight">
-            Transcript<span className="text-primary-400">Tool</span>
+            Gibson<span className="text-primary-400">Tools</span>
           </span>
         </Link>
-        <div className="flex items-center gap-4 sm:gap-6">
+        <div className="flex items-center gap-3 sm:gap-6">
+          <Link
+            href="/tools/store-image"
+            className={`text-xs sm:text-sm font-medium transition px-3 py-1.5 rounded-lg ${
+              pathname === "/tools/store-image"
+                ? "bg-blue-500/10 text-blue-400 border border-blue-500/30 font-semibold"
+                : "text-gray-300 hover:text-white"
+            }`}
+          >
+            Direct Image Store
+          </Link>
           <Link
             href="/tools/transcript"
-            className={`text-sm font-medium transition ${
-              pathname === "/tools/transcript" || pathname === "/"
+            className={`text-xs sm:text-sm font-medium transition ${
+              pathname === "/tools/transcript"
                 ? "text-primary-400 font-semibold"
                 : "text-gray-300 hover:text-white"
             }`}
@@ -31,7 +41,7 @@ export default function Navbar() {
           </Link>
           <Link
             href="/tools/result-transfer"
-            className={`text-sm font-medium transition ${
+            className={`text-xs sm:text-sm font-medium transition ${
               pathname === "/tools/result-transfer"
                 ? "text-primary-400 font-semibold"
                 : "text-gray-300 hover:text-white"

@@ -1,0 +1,136 @@
+import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
+import { getTranscriptData, saveTranscriptData } from "../../../lib/serverStore";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function sanitizeRoute(rawRoute) {
+  if (!rawRoute) return "";
+  let clean = rawRoute.trim();
+  // If user pasted a full URL (e.g., https://gs.gyaschol.com/ref/1184229.png), extract path/slug
+  clean = clean.replace(/^https?:\/\/[^\/]+/i, "");
+  // Remove leading/trailing slashes
+  clean = clean.replace(/^\/+|\/+$/g, "");
+  // If user included 'ref/', strip it to get the slug ID
+  if (clean.toLowerCase().startsWith("ref/")) {
+    clean = clean.substring(4);
+  }
+  // Remove file extension (.png, .jpg, etc.) for internal slug key
+  clean = clean.replace(/\.(png|jpe?g|webp)$/i, "");
+  return clean;
+}
+
+export async function POST(request) {
+  try {
+    const formData = await request.formData();
+    const imageFile = formData.get("image") || formData.get("file");
+    const routeInput = formData.get("route") || formData.get("slug") || formData.get("id") || "";
+    const checkOnly = formData.get("checkOnly") === "true";
+    const overwrite = formData.get("overwrite") === "true";
+
+    // 1. Validate route or generate automatic random 7-digit ID
+    let slugId = sanitizeRoute(routeInput);
+    if (!slugId) {
+      slugId = String(Math.floor(1000000 + Math.random() * 9000000));
+    }
+
+    const publicRefJpg = path.join(process.cwd(), "public", "ref", `${slugId}.jpg`);
+    const publicRefPng = path.join(process.cwd(), "public", "ref", `${slugId}.png`);
+
+    // 2. Check if route already exists
+    let exists = false;
+    let existingInfo = null;
+
+    if (fs.existsSync(publicRefJpg) || fs.existsSync(publicRefPng)) {
+      exists = true;
+    }
+
+    const storedData = await getTranscriptData(slugId);
+    if (storedData) {
+      exists = true;
+      existingInfo = {
+        savedAt: storedData.savedAt,
+        filename: storedData.metadata?.originalFilename,
+      };
+    }
+
+    // If request is only checking route availability
+    if (checkOnly) {
+      return NextResponse.json({
+        exists,
+        slugId,
+        publicUrl: `https://gs.gyaschol.com/ref/${slugId}.png`,
+        existingInfo,
+      });
+    }
+
+    // If exists and user did not confirm overwrite
+    if (exists && !overwrite) {
+      return NextResponse.json({
+        exists: true,
+        slugId,
+        publicUrl: `https://gs.gyaschol.com/ref/${slugId}.png`,
+        message: `The route 'ref/${slugId}.png' already exists. Do you want to overwrite it?`,
+        requireConfirmation: true,
+        existingInfo,
+      });
+    }
+
+    // 3. Process and store image directly (as-is, zero modifications)
+    if (!imageFile || typeof imageFile === "string") {
+      return NextResponse.json(
+        { error: "Please upload a valid image file." },
+        { status: 400 }
+      );
+    }
+
+    const filename = imageFile.name || "stored_image.png";
+    const arrayBuffer = await imageFile.arrayBuffer();
+    const imageBuffer = Buffer.from(arrayBuffer);
+
+    // Save to public/ref directory
+    const refDir = path.join(process.cwd(), "public", "ref");
+    if (!fs.existsSync(refDir)) {
+      fs.mkdirSync(refDir, { recursive: true });
+    }
+
+    // Save both PNG and JPG endpoints for seamless access
+    fs.writeFileSync(path.join(refDir, `${slugId}.png`), imageBuffer);
+    fs.writeFileSync(path.join(refDir, `${slugId}.jpg`), imageBuffer);
+
+    // Also persist to server store
+    await saveTranscriptData(slugId, {
+      metadata: {
+        originalFilename: filename,
+        slugId,
+        publicUrl: `https://gs.gyaschol.com/ref/${slugId}.png`,
+        savedAt: new Date().toISOString(),
+        directStorage: true,
+      },
+      photoBuffer: imageBuffer,
+      photoBase64: imageBuffer.toString("base64"),
+    });
+
+    const publicUrl = `https://gs.gyaschol.com/ref/${slugId}.png`;
+    const vercelUrl = `/ref/${slugId}.png`;
+
+    return NextResponse.json({
+      success: true,
+      overwritten: exists,
+      slugId,
+      publicUrl,
+      downloadUrl: vercelUrl,
+      filename,
+      sizeBytes: imageBuffer.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Error in store-image API:", error);
+    return NextResponse.json(
+      { error: error.message || "Failed to store image." },
+      { status: 500 }
+    );
+  }
+}
