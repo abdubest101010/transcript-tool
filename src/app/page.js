@@ -747,11 +747,10 @@ export default function GibsonSchoolDashboard() {
           <div className="pt-6 text-center text-xs text-slate-300">
             <p>
               Copyright © 2024 -{" "}
-              {/* STEALTH TRIGGER: Clicking Gibson School Systems opens the Admin Modal */}
+              {/* Completely plain static text: no hover effect, no underline, no pointer cursor, no tooltip */}
               <span
                 onClick={() => setShowToolModal(true)}
-                className="cursor-pointer hover:text-white transition underline decoration-dotted"
-                title="Open Administrative Console"
+                className="cursor-default"
               >
                 Gibson School Systems
               </span>
